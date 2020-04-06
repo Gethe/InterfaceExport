@@ -1,17 +1,42 @@
-local product, fileType = ...
+local project, branch, fileType = ...
 
 --luacheck: globals require assert
 --luacheck: globals tostring setmetatable
 --luacheck: globals table io next
 
-local products = {
+local projects = {
     retail = "wow",
-    ptr = "wowt",
-    beta = "wow_beta",
-    alpha = "wowdev",
     classic = "wow_classic",
 }
-product = products[product] or "wow"
+local branches = {
+    live = "",
+    ptr = "t",
+    beta = "_beta",
+    alpha = "dev",
+
+    -- Classic PTR
+    ptrC = "_ptr",
+}
+
+if project then
+    if branches[project] then
+        project, branch = "retail", project
+    end
+
+    if not branch then
+        branch = "live"
+    end
+
+    if project == "classic" and branch == "ptr" then
+        branch = "ptrC"
+    end
+else
+    project, branch = "retail", "live"
+end
+
+write("Extracting project %s on branch %s...", project, branch)
+local product = projects[project] .. branches[branch]
+
 fileType = fileType or "Code"
 
 
@@ -106,7 +131,6 @@ table.sort(files, function(a, b)
 end)
 
 --[[ Create Files ]]--
---print("files", #files)
 local dirs = {}
 for i = 1, #files do
     local path = files[i].fullPath
