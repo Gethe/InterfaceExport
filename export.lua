@@ -4,6 +4,22 @@ local project, branch, fileType = ...
 --luacheck: globals tostring setmetatable
 --luacheck: globals table io next
 
+local function write(text, ...)
+    _G.print(text:format(...))
+end
+
+local progress = 0
+local function UpdateProgress(current)
+    if (current - progress) > 0.1 then
+        write("%d%%", current * 100)
+        progress = current
+    end
+    if current == 1 then
+        write("Done!")
+        progress = 0
+    end
+end
+
 local projects = {
     retail = "wow",
     classic = "wow_classic",
@@ -58,6 +74,7 @@ local FILEID_PATH_MAP = {
 local conf do
     local function selectBuild(buildInfo)
         for i = 1, #buildInfo do
+            --print(buildInfo[i].Product, buildInfo[i].Active)
             if buildInfo[i].Product == product and buildInfo[i].Active == 1 then
                 return i
             end
@@ -94,6 +111,7 @@ local params = {
 }
 local csvFile = csv.open("manifestinterfacedata.csv", params)
 if csvFile then
+    -- https://wow.tools/dbc/api/export/?name=manifestinterfacedata&build=8.3.0.33369
     for fields in csvFile:lines() do
         local name = fields.FileName
         local path = (fields.FilePath):gsub("[/\\]+", "/")
@@ -155,14 +173,18 @@ table.sort(makeDirs, function(a, b)
     return #a < #b
 end)
 
+write("Creating %d folders...", #makeDirs)
 plat.mkdir(root)
 for i = 1, #makeDirs do
     --print("make dir", root, makeDirs[i])
+    UpdateProgress(i / #makeDirs)
     plat.mkdir(plat.path(root, makeDirs[i]))
 end
 
+write("Creating %d files...", #files)
 local fails = {}
 for i = 1, #files do
+    UpdateProgress(i / #files)
     local file = files[i]
     local filePath = file.fullPath
     local fixedCase = (filePath:gsub("[^/]+()/", function(b)
