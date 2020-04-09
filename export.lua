@@ -63,7 +63,9 @@ local csv = require("csv")
 local lfs = require("lfs")
 
 local WOWDIR = "E:/World of Warcraft"
-local CDN = ("http://us.patch.battle.net:1119/%s/#us"):format(product)
+local CACHE_DIR = "G:/Cache"
+local REGION = "us"
+local PATCH_BASE = ("http://%s.patch.battle.net:1119/%s"):format(REGION, product)
 local FILEID_PATH_MAP = {
     ["DBFilesClient/ManifestInterfaceData.db2"] = 1375801,
     ["DBFilesClient/GlobalStrings.db2"] = 1394440,
@@ -82,18 +84,35 @@ local conf do
         end
     end
 
-    local buildKey, _, _, version = casc.localbuild(WOWDIR .. "\\.build.info", selectBuild)
-    _G.print(("Build: %s"):format(tostring(version)))
+    local base = WOWDIR .. "/Data"
+    local buildKey, cdn, ckey, version = casc.localbuild(WOWDIR .. "/.build.info", selectBuild)
+    if version then
+        write("Product: %s Build: %s", product, tostring(version))
+    else
+        write("Local build not found, checking CDN...")
+
+        buildKey, cdn, ckey, version = casc.cdnbuild(PATCH_BASE, REGION)
+        if version then
+            write("CDN Product: %s Build: %s", product, tostring(version))
+            base = CACHE_DIR
+        else
+            write("Product %s not found", product)
+            return
+        end
+    end
 
     conf = {
-        base = WOWDIR .. "/data",
+        bkey = buildKey,
+        base = base,
+        cdn = cdn,
+        ckey = ckey,
+        cache = CACHE_DIR,
         locale = casc.locale.US,
         verifyHashes = false,
-        bkey = buildKey,
-        --log = print
+        log = print
     }
 end
-local fileHandle = assert(casc.open(CDN, conf))
+local fileHandle = assert(casc.open(conf))
 
 local files = {}
 local fileFilter = {
