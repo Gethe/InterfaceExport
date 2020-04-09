@@ -8,18 +8,6 @@ local function write(text, ...)
     _G.print(text:format(...))
 end
 
-local progress = 0
-local function UpdateProgress(current)
-    if (current - progress) > 0.1 then
-        write("%d%%", current * 100)
-        progress = current
-    end
-    if current == 1 then
-        write("Done!")
-        progress = 0
-    end
-end
-
 local projects = {
     retail = "wow",
     classic = "wow_classic",
@@ -192,6 +180,26 @@ table.sort(makeDirs, function(a, b)
     return #a < #b
 end)
 
+
+local progress = 0
+local collectgarbage = _G.collectgarbage
+local gcLimit = 1024 * 1024
+local function UpdateProgress(current)
+    if collectgarbage("count") > gcLimit then
+        collectgarbage()
+    end
+
+    if (current - progress) > 0.1 then
+        write("%d%%", current * 100)
+        progress = current
+    end
+    if current == 1 then
+        write("Done!")
+        progress = 0
+    end
+end
+
+
 write("Creating %d folders...", #makeDirs)
 plat.mkdir(root)
 for i = 1, #makeDirs do
@@ -200,20 +208,24 @@ for i = 1, #makeDirs do
     plat.mkdir(plat.path(root, makeDirs[i]))
 end
 
-write("Creating %d files...", #files)
 local fails = {}
+local file, filePath, fixedCase
+local w, h
+local function FixCase(b)
+    local s = filePath:sub(1, b - 1)
+    return dirs[s:lower()]:match("([^/]+/)$")
+end
+
+write("Creating %d files...", #files)
 for i = 1, #files do
     UpdateProgress(i / #files)
-    local file = files[i]
-    local filePath = file.fullPath
-    local fixedCase = (filePath:gsub("[^/]+()/", function(b)
-        local s = filePath:sub(1, b - 1)
-        return dirs[s:lower()]:match("([^/]+/)$")
-    end))
-    local w = fileHandle:readFile(filePath)
+    file = files[i]
+    filePath = file.fullPath
+    fixedCase = (filePath:gsub("[^/]+()/", FixCase))
+    w = fileHandle:readFile(filePath)
     if w then
-        --print("create", root, fixedCase)
-        local h = io.open(plat.path(root, fixedCase), "wb")
+        write("create %s", fixedCase)
+        h = io.open(plat.path(root, fixedCase), "wb")
         h:write(w)
         h:close()
     else
@@ -223,7 +235,7 @@ end
 
 
 if next(fails) then
-    local file = assert(io.open("fails.txt", "w"))
+    file = assert(io.open("fails.txt", "w"))
     for _, path in next, fails do
         --print("failed", path)
         file:write(path, "\n")
