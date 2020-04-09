@@ -36,7 +36,7 @@ local branches = {
 
 if project then
     if branches[project] then
-        project, branch = "retail", project
+        project, branch, fileType = "retail", project, branch
     end
 
     if not branch then
