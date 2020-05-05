@@ -236,9 +236,10 @@ end
 
 if next(fails) then
     file = assert(io.open("fails.txt", "w"))
-    for _, path in next, fails do
-        --print("failed", path)
-        file:write(path, "\n")
-        assert(lfs.rmdir(plat.path(root, path)))
+    for pathLower, path in next, fails do
+        if lfs.rmdir(plat.path(root, path)) then
+            --print("failed", path)
+            file:write(path, "\n")
+        end
     end
 end
