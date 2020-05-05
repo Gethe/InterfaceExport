@@ -27,24 +27,25 @@ local fileTypes = {
 
 if project then
     if branches[project] then
-        project, branch, fileType = "retail", project, branch
+        branch, fileType = project, branch
+        project = nil
     end
-
-    if not branch then
-        branch = "live"
+    if fileTypes[project] then
+        fileType = project
+        project = nil
     end
 
     if project == "classic" and branch == "ptr" then
         branch = "ptrC"
     end
-else
-    project, branch = "retail", "live"
 end
 
-write("Extracting project %s on branch %s...", project, branch)
-local product = projects[project] .. branches[branch]
-
+project = project or "retail"
+branch = branch or "live"
 fileType = fileType or "code"
+
+write("Extracting %s from %s %s...", fileType, project, branch)
+local product = projects[project] .. branches[branch]
 
 
 local casc = require("casc")
