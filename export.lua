@@ -20,6 +20,10 @@ local branches = {
     -- Classic PTR
     ptrC = "_ptr",
 }
+local fileTypes = {
+    code = "Code",
+    art = "Art",
+}
 
 if project then
     if branches[project] then
@@ -40,7 +44,7 @@ end
 write("Extracting project %s on branch %s...", project, branch)
 local product = projects[project] .. branches[branch]
 
-fileType = fileType or "Code"
+fileType = fileType or "code"
 
 
 local casc = require("casc")
@@ -103,12 +107,12 @@ local fileHandle = assert(casc.open(conf))
 
 local files = {}
 local fileFilter = {
-    xml = "Code",
-    lua = "Code",
-    toc = "Code",
-    xsd = "Code",
+    xml = "code",
+    lua = "code",
+    toc = "code",
+    xsd = "code",
 
-    blp = "Art"
+    blp = "art"
 }
 
 --[[ Filter Names ]]--
@@ -171,7 +175,7 @@ for i = 1, #files do
     end
 end
 
-local root, makeDirs = "BlizzardInterface" .. fileType, {}
+local root, makeDirs = "BlizzardInterface" .. fileTypes[fileType], {}
 for _, subPath in next, dirs do
     table.insert(makeDirs, subPath)
 end
