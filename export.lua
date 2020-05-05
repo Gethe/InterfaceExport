@@ -96,7 +96,7 @@ local conf do
         cache = CACHE_DIR,
         locale = casc.locale.US,
         verifyHashes = false,
-        log = print
+        --log = print
     }
 end
 local fileHandle = assert(casc.open(conf))
