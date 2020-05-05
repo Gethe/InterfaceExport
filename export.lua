@@ -16,7 +16,6 @@ local branches = {
     live = "",
     ptr = "t",
     beta = "_beta",
-    alpha = "dev",
 
     -- Classic PTR
     ptrC = "_ptr",
