@@ -4,7 +4,7 @@ WoW Interface Export
 This tool that will extract the interface files for World of Warcraft, either from a local install or from the CDN.
 
 Usage:
-`lua export.lua [project] [branch] [fileType]`
+`lua export.lua [project] [branch] [filter]`
 
 ### project ###
   * `retail` - Default
@@ -15,7 +15,7 @@ Usage:
   * `ptr`
   * `beta`
 
-### fileType ###
+### filter ###
   * `code` - Default
   * `art`
   * `all`
