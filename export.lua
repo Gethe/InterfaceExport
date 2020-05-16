@@ -23,6 +23,7 @@ local branches = {
 local fileTypes = {
     code = "Code",
     art = "Art",
+    all = true,
 }
 
 if project then
@@ -267,4 +268,9 @@ local ExtractFiles do
 end
 
 
-ExtractFiles(filter)
+if filter == "all" then
+    ExtractFiles("code")
+    ExtractFiles("art")
+else
+    ExtractFiles(filter)
+end
