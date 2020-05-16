@@ -1,4 +1,4 @@
-local project, branch, fileType = ...
+local project, branch, filter = ...
 
 --luacheck: globals require assert
 --luacheck: globals tostring setmetatable
@@ -27,11 +27,11 @@ local fileTypes = {
 
 if project then
     if branches[project] then
-        branch, fileType = project, branch
+        branch, filter = project, branch
         project = nil
     end
     if fileTypes[project] then
-        fileType = project
+        filter = project
         project = nil
     end
 
@@ -42,9 +42,9 @@ end
 
 project = project or "retail"
 branch = branch or "live"
-fileType = fileType or "code"
+filter = filter or "code"
 
-write("Extracting %s from %s %s...", fileType, project, branch)
+write("Extracting %s from %s %s...", filter, project, branch)
 local product = projects[project] .. branches[branch]
 
 
@@ -65,7 +65,7 @@ local FILEID_PATH_MAP = {
     ["DBFilesClient/UiTextureAtlasMember.db2"] = 897532,
 }
 
-local conf do
+local fileHandle do
     local function selectBuild(buildInfo)
         for i = 1, #buildInfo do
             --print(buildInfo[i].Product, buildInfo[i].Active)
@@ -93,7 +93,7 @@ local conf do
         end
     end
 
-    conf = {
+    local conf = {
         bkey = buildKey,
         base = base,
         cdn = cdn,
@@ -103,30 +103,33 @@ local conf do
         verifyHashes = false,
         --log = print
     }
+
+    fileHandle = assert(casc.open(conf))
 end
-local fileHandle = assert(casc.open(conf))
 
-local files = {}
-local fileFilter = {
-    xml = "code",
-    lua = "code",
-    toc = "code",
-    xsd = "code",
+local GetFileList do
+    local fileFilter = {
+        xml = "code",
+        lua = "code",
+        toc = "code",
+        xsd = "code",
 
-    blp = "art"
-}
+        blp = "art"
+    }
 
---[[ Filter Names ]]--
-local params = {
-    header = true,
-}
-local csvFile = csv.open("manifestinterfacedata.csv", params)
-if csvFile then
-    -- https://wow.tools/dbc/api/export/?name=manifestinterfacedata&build=8.3.0.33369
-    for fields in csvFile:lines() do
-        local name = fields.FileName
-        local path = (fields.FilePath):gsub("[/\\]+", "/")
+    local params = {
+        header = true,
+    }
+
+    local l = setmetatable({}, {__index=function(s, a) s[a] = a:lower() return s[a] end})
+    local function SortPath(a, b)
+        return l[a.fullPath] < l[b.fullPath]
+    end
+
+    local function CheckFile(fileType, files, name, path)
+        --print(_, path, name)
         if fileFilter[(name:match("%.(...)$") or ""):lower()] == fileType then
+            path = path:gsub("[/\\]+", "/")
             files[#files + 1] = {
                 path = path,
                 name = name,
@@ -134,55 +137,30 @@ if csvFile then
             }
         end
     end
-else
-    fileHandle.root:addFileIDPaths(FILEID_PATH_MAP)
 
-    local fileData = assert(fileHandle:readFile("DBFilesClient/ManifestInterfaceData.db2"))
-    for _, path, name in dbc.rows(fileData, "ss") do
-        if path:match("^[Ii][Nn][Tt][Ee][Rr][Ff][Aa][Cc][Ee][\\/]") then
-            --print(_, path, name)
-            if fileFilter[(name:match("%.(...)$") or ""):lower()] == fileType then
-                path = path:gsub("[/\\]+", "/")
-                files[#files + 1] = {
-                    path = path,
-                    name = name,
-                    fullPath = path .. name,
-                }
+    function GetFileList(fileType)
+        local files = {}
+        local csvFile = csv.open("manifestinterfacedata.csv", params)
+        if csvFile then
+            -- https://wow.tools/dbc/api/export/?name=manifestinterfacedata&build=8.3.0.33369
+            for fields in csvFile:lines() do
+                CheckFile(fileType, files, fields.FileName, fields.FilePath)
+            end
+        else
+            fileHandle.root:addFileIDPaths(FILEID_PATH_MAP)
+
+            local fileData = assert(fileHandle:readFile("DBFilesClient/ManifestInterfaceData.db2"))
+            for _, path, name in dbc.rows(fileData, "ss") do
+                if path:match("^[Ii][Nn][Tt][Ee][Rr][Ff][Aa][Cc][Ee][\\/]") then
+                    CheckFile(fileType, files, name, path)
+                end
             end
         end
+
+        table.sort(files, SortPath)
+        return files
     end
 end
-
-
-local l = setmetatable({}, {__index=function(s, a) s[a] = a:lower() return s[a] end})
-table.sort(files, function(a, b)
-    return l[a.fullPath] < l[b.fullPath]
-end)
-
---[[ Create Files ]]--
-local dirs = {}
-for i = 1, #files do
-    local path = files[i].fullPath
-    --print("file", path)
-    for endPoint in path:gmatch("()/") do
-        local subPath = path:sub(1, endPoint - 1)
-        local subLower = subPath:lower()
-        --print("path", path, subPath)
-
-        if not dirs[subLower] then
-            --print("dir", subLower, subPath)
-            dirs[subLower] = subPath
-        end
-    end
-end
-
-local root, makeDirs = "BlizzardInterface" .. fileTypes[fileType], {}
-for _, subPath in next, dirs do
-    table.insert(makeDirs, subPath)
-end
-table.sort(makeDirs, function(a, b)
-    return #a < #b
-end)
 
 
 local progress = 0
@@ -204,46 +182,89 @@ local function UpdateProgress(current)
 end
 
 
-write("Creating %d folders...", #makeDirs)
-plat.mkdir(root)
-for i = 1, #makeDirs do
-    --print("make dir", root, makeDirs[i])
-    UpdateProgress(i / #makeDirs)
-    plat.mkdir(plat.path(root, makeDirs[i]))
-end
+local CreateDirectories do
+    local function SortDirectories(a, b)
+        return #a < #b
+    end
 
-local fails = {}
-local file, filePath, fixedCase
-local w, h
-local function FixCase(b)
-    local s = filePath:sub(1, b - 1)
-    return dirs[s:lower()]:match("([^/]+/)$")
-end
+    function CreateDirectories(files, root)
+        local dirs = {}
+        for i = 1, #files do
+            local path = files[i].fullPath
+            --print("file", path)
+            for endPoint in path:gmatch("()/") do
+                local subPath = path:sub(1, endPoint - 1)
+                local subLower = subPath:lower()
+                --print("path", path, subPath)
 
-write("Creating %d files...", #files)
-for i = 1, #files do
-    UpdateProgress(i / #files)
-    file = files[i]
-    filePath = file.fullPath
-    fixedCase = (filePath:gsub("[^/]+()/", FixCase))
-    w = fileHandle:readFile(filePath)
-    if w then
-        write("create %s", fixedCase)
-        h = io.open(plat.path(root, fixedCase), "wb")
-        h:write(w)
-        h:close()
-    else
-        fails[file.path:lower()] = file.path
+                if not dirs[subLower] then
+                    --print("dir", subLower, subPath)
+                    dirs[subLower] = subPath
+                end
+            end
+        end
+
+        local makeDirs = {}
+        for _, subPath in next, dirs do
+            table.insert(makeDirs, subPath)
+        end
+        table.sort(makeDirs, SortDirectories)
+
+        write("Creating %d folders...", #makeDirs)
+        plat.mkdir(root)
+        for i = 1, #makeDirs do
+            --print("make dir", root, makeDirs[i])
+            UpdateProgress(i / #makeDirs)
+            plat.mkdir(plat.path(root, makeDirs[i]))
+        end
+
+        return dirs
     end
 end
 
 
-if next(fails) then
-    file = assert(io.open("fails.txt", "w"))
-    for pathLower, path in next, fails do
-        if lfs.rmdir(plat.path(root, path)) then
-            --print("failed", path)
-            file:write(path, "\n")
+local ExtractFiles do
+    function ExtractFiles(fileType)
+        local files = GetFileList(fileType)
+        local root = "BlizzardInterface" .. fileTypes[fileType]
+        local dirs = CreateDirectories(files, root)
+
+        local file, filePath, fixedCase
+        local fails, w, h = {}
+        local function FixCase(b)
+            local s = filePath:sub(1, b - 1)
+            return dirs[s:lower()]:match("([^/]+/)$")
+        end
+
+        write("Creating %d files...", #files)
+        for i = 1, #files do
+            UpdateProgress(i / #files)
+            file = files[i]
+            filePath = file.fullPath
+            fixedCase = (filePath:gsub("[^/]+()/", FixCase))
+            w = fileHandle:readFile(filePath)
+            if w then
+                write("create %s", fixedCase)
+                h = io.open(plat.path(root, fixedCase), "wb")
+                h:write(w)
+                h:close()
+            else
+                fails[file.path:lower()] = file.path
+            end
+        end
+
+
+        if next(fails) then
+            file = assert(io.open("fails"..fileType..".txt", "w"))
+            for pathLower, path in next, fails do
+                if lfs.rmdir(plat.path(root, path)) then
+                    --print("failed", path)
+                    file:write(path, "\n")
+                end
+            end
         end
     end
 end
+
+
+ExtractFiles(filter)
