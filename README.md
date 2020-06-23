@@ -16,12 +16,12 @@ Usage:
   * `beta`
 
 ### filter ###
-  * `code` - Default
+  * `all` - Default
+  * `code`
   * `art`
-  * `all`
 
 
-Tools required:
+Tools used:
   * [LuaCasc](https://www.townlong-yak.com/casc/)
   * [LuaDBC](https://www.townlong-yak.com/casc/dbc/)
   * [LuaFileSystem](https://luarocks.org/modules/hisham/luafilesystem)

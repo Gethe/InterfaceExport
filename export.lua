@@ -21,9 +21,9 @@ local branches = {
     ptrC = "_ptr",
 }
 local fileTypes = {
+    all = true,
     code = "Code",
     art = "Art",
-    all = true,
 }
 
 if project then
@@ -43,7 +43,7 @@ end
 
 project = project or "retail"
 branch = branch or "live"
-filter = filter or "code"
+filter = filter or "all"
 
 write("Extracting %s from %s %s...", filter, project, branch)
 local product = projects[project] .. branches[branch]
