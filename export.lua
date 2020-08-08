@@ -94,6 +94,12 @@ local fileHandle do
         end
     end
 
+    local versionBuild = ("%s (%s)"):format(version:match("(%d.%d.%d).(%d*)"))
+    if versionBuild then
+        local file = assert(io.open("version.txt", "w"))
+        file:write(versionBuild, "\n")
+    end
+
     local conf = {
         bkey = buildKey,
         base = base,
