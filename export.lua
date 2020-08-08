@@ -1,6 +1,6 @@
 local project, branch, filter = ...
 
---luacheck: globals require assert
+--luacheck: globals require assert pcall
 --luacheck: globals tostring setmetatable
 --luacheck: globals table io next
 
@@ -52,7 +52,7 @@ local product = projects[project] .. branches[branch]
 local casc = require("casc")
 local plat = require("casc.platform")
 local dbc = require("dbc")
-local csv = require("csv")
+local csv = pcall(require, "csv")
 local lfs = require("lfs")
 
 local WOWDIR = "E:/World of Warcraft"
@@ -142,9 +142,9 @@ local GetFileList do
 
     function GetFileList(fileType)
         local files = {}
-        local csvFile = csv.open("manifestinterfacedata.csv", params)
-        if csvFile then
-            -- https://wow.tools/dbc/api/export/?name=manifestinterfacedata&build=8.3.0.33369
+        if csv and io.open("manifestinterfacedata.csv", "r")then
+            -- from wow.tools table browser
+            local csvFile = csv.open("manifestinterfacedata.csv", params)
             for fields in csvFile:lines() do
                 CheckFile(fileType, files, fields.ID, fields.FilePath, fields.FileName)
             end

@@ -25,4 +25,4 @@ Tools used:
   * [LuaCasc](https://www.townlong-yak.com/casc/)
   * [LuaDBC](https://www.townlong-yak.com/casc/dbc/)
   * [LuaFileSystem](https://luarocks.org/modules/hisham/luafilesystem)
-  * [LuaCSV](https://luarocks.org/modules/geoffleyland/csv)
+  * [LuaCSV](https://luarocks.org/modules/geoffleyland/csv) (optional)
