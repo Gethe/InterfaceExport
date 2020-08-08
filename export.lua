@@ -101,6 +101,7 @@ local fileHandle do
         ckey = ckey,
         cache = CACHE_DIR,
         locale = casc.locale.US,
+        requireRootFile = false,
         verifyHashes = false,
         --log = print
     }
@@ -127,13 +128,13 @@ local GetFileList do
         return l[a.fullPath] < l[b.fullPath]
     end
 
-    local function CheckFile(fileType, files, name, path)
+    local function CheckFile(fileType, files, id, path, name)
         --print(_, path, name)
         if fileFilter[(name:match("%.(...)$") or ""):lower()] == fileType then
             path = path:gsub("[/\\]+", "/")
             files[#files + 1] = {
                 path = path,
-                name = name,
+                id = id,
                 fullPath = path .. name,
             }
         end
@@ -145,15 +146,15 @@ local GetFileList do
         if csvFile then
             -- https://wow.tools/dbc/api/export/?name=manifestinterfacedata&build=8.3.0.33369
             for fields in csvFile:lines() do
-                CheckFile(fileType, files, fields.FileName, fields.FilePath)
+                CheckFile(fileType, files, fields.ID, fields.FilePath, fields.FileName)
             end
         else
             fileHandle.root:addFileIDPaths(FILEID_PATH_MAP)
 
             local fileData = assert(fileHandle:readFile("DBFilesClient/ManifestInterfaceData.db2"))
-            for _, path, name in dbc.rows(fileData, "ss") do
+            for id, path, name in dbc.rows(fileData, "ss") do
                 if path:match("^[Ii][Nn][Tt][Ee][Rr][Ff][Aa][Cc][Ee][\\/]") then
-                    CheckFile(fileType, files, name, path)
+                    CheckFile(fileType, files, id, path, name)
                 end
             end
         end
