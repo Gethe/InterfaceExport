@@ -138,9 +138,16 @@ local GetFileList do
         --print(_, path, name)
         if fileFilter[(name:match("%.(...)$") or ""):lower()] == fileType then
             path = path:gsub("[/\\]+", "/")
+
+            local shortPath = path
+            if filter ~= "all" then
+                shortPath = shortPath:gsub("[Ii][Nn][Tt][Ee][Rr][Ff][Aa][Cc][Ee]/", "")
+            end
+            --print("CheckFile", path)
             files[#files + 1] = {
-                path = path,
+                path = shortPath,
                 id = id,
+                shortPath = shortPath .. name,
                 fullPath = path .. name,
             }
         end
@@ -198,15 +205,13 @@ local CreateDirectories do
     function CreateDirectories(files, root)
         local dirs = {}
         for i = 1, #files do
-            local path = files[i].fullPath
-            --print("file", path)
+            local path = files[i].shortPath
             for endPoint in path:gmatch("()/") do
                 local subPath = path:sub(1, endPoint - 1)
                 local subLower = subPath:lower()
-                --print("path", path, subPath)
 
                 if not dirs[subLower] then
-                    --print("dir", subLower, subPath)
+                    --print("dir", path, subPath, subLower)
                     dirs[subLower] = subPath
                 end
             end
@@ -234,13 +239,17 @@ end
 local ExtractFiles do
     function ExtractFiles(fileType)
         local files = GetFileList(fileType)
-        local root = "BlizzardInterface" .. fileTypes[fileType]
+        local root = "./"
+        if filter == "all" then
+            root = "BlizzardInterface" .. fileTypes[fileType]
+        end
         local dirs = CreateDirectories(files, root)
 
         local file, filePath, fixedCase
         local fails, w, h = {}
         local function FixCase(b)
             local s = filePath:sub(1, b - 1)
+            --print("fixedCase", filePath, b, s)
             return dirs[s:lower()]:match("([^/]+/)$")
         end
 
@@ -248,15 +257,16 @@ local ExtractFiles do
         for i = 1, #files do
             UpdateProgress(i / #files)
             file = files[i]
-            filePath = file.fullPath
+            filePath = file.shortPath
             fixedCase = (filePath:gsub("[^/]+()/", FixCase))
-            w = fileHandle:readFile(filePath)
+            w = fileHandle:readFile(file.fullPath)
             if w then
                 write("create %s", fixedCase)
                 h = io.open(plat.path(root, fixedCase), "wb")
                 h:write(w)
                 h:close()
             else
+                --print("fail", file.path, filePath)
                 fails[file.path:lower()] = file.path
             end
         end
