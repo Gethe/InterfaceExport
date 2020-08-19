@@ -1,5 +1,6 @@
 Blizzard*/
 fails*.txt
+version.txt
 
 ## Sublime Text ##
 *.sublime-workspace

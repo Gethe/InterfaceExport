@@ -1,8 +1,8 @@
 local project, branch, filter = ...
 
---luacheck: globals require assert pcall
+--luacheck: globals require assert pcall type
 --luacheck: globals tostring setmetatable
---luacheck: globals table io next
+--luacheck: globals table io next os
 
 local function write(text, ...)
     _G.print(text:format(...))
@@ -53,7 +53,6 @@ local casc = require("casc")
 local plat = require("casc.platform")
 local dbc = require("dbc")
 local csv = pcall(require, "csv")
-local lfs = require("lfs")
 
 local WOWDIR = "E:/World of Warcraft"
 local CACHE_DIR = "G:/Cache"
@@ -65,6 +64,25 @@ local FILEID_PATH_MAP = {
     ["DBFilesClient/UiTextureAtlas.db2"] = 897470,
     ["DBFilesClient/UiTextureAtlasMember.db2"] = 897532,
 }
+
+local rmdir do
+    -- Based on code from casc.platform
+    local command = "rmdir %s"
+    local function execute(...)
+        local ok, status, sig = os.execute(...)
+        if ok == true and status == "exit" or status == "signal" then
+            return sig
+        else
+            return ok or sig or ok, status, sig
+        end
+    end
+    local function shellEscape(s)
+        return '"' .. s:gsub('"', '"\\\\""') .. '"'
+    end
+    function rmdir(path)
+        return execute(command:format(shellEscape(path)))
+    end
+end
 
 local fileHandle do
     local function selectBuild(buildInfo)
@@ -275,7 +293,7 @@ local ExtractFiles do
         if next(fails) then
             file = assert(io.open("fails"..fileType..".txt", "w"))
             for pathLower, path in next, fails do
-                if lfs.rmdir(plat.path(root, path)) then
+                if rmdir(plat.path(root, path)) then
                     --print("failed", path)
                     file:write(path, "\n")
                 end
