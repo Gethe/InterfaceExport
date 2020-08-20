@@ -2,7 +2,7 @@ local project, branch, filter = ...
 
 --luacheck: globals require assert pcall type
 --luacheck: globals tostring setmetatable
---luacheck: globals table io next os
+--luacheck: globals table io next os package
 
 local function write(text, ...)
     _G.print(text:format(...))
@@ -67,7 +67,12 @@ local FILEID_PATH_MAP = {
 
 local rmdir do
     -- Based on code from casc.platform
+    local dir_sep = package and package.config and package.config:sub(1,1) or "/"
     local command = "rmdir %s"
+    if dir_sep == '/' then
+        -- *nix
+        command = "rm -dr %s"
+    end
     local function execute(...)
         local ok, status, sig = os.execute(...)
         if ok == true and status == "exit" or status == "signal" then
