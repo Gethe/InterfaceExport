@@ -71,7 +71,7 @@ local rmdir do
     local command = "rmdir %s"
     if dir_sep == '/' then
         -- *nix
-        command = "rm -dr %s"
+        command = "rm -r %s"
     end
     local function execute(...)
         local ok, status, sig = os.execute(...)
