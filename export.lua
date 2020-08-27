@@ -31,9 +31,15 @@ if project then
         branch, filter = project, branch
         project = nil
     end
+
     if fileTypes[project] then
         filter = project
         project = nil
+    end
+
+    if fileTypes[branch] then
+        filter = branch
+        branch = nil
     end
 
     if project == "classic" and branch == "ptr" then
