@@ -61,7 +61,7 @@ local dbc = require("dbc")
 local csv = pcall(require, "csv")
 
 local WOWDIR = "E:/World of Warcraft"
-local CACHE_DIR = "G:/Cache"
+local CACHE_DIR = "./Cache"
 local REGION = "us"
 local PATCH_BASE = ("http://%s.patch.battle.net:1119/%s"):format(REGION, product)
 local FILEID_PATH_MAP = {
@@ -129,6 +129,7 @@ local fileHandle do
         file:write(versionBuild, "\n")
     end
 
+    plat.mkdir(CACHE_DIR)
     local conf = {
         bkey = buildKey,
         base = base,
