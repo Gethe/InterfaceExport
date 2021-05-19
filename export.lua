@@ -11,6 +11,9 @@ end
 local projects = {
     retail = "wow",
     classic = "wow_classic",
+    bcc = "wow_classic",
+    classic_era = "wow_classic_era",
+    vanilla = "wow_classic_era",
 }
 local branches = {
     live = "",

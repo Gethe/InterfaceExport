@@ -7,8 +7,14 @@ Usage:
 `lua export.lua [project] [branch] [filter]`
 
 ### project ###
-  * `retail` - Default
-  * `classic`
+  * `retail`      - Default
+  * `classic`     - Most recent Classic version 
+
+These can also be used to refer to a specific WoW Classic project
+
+  * `bcc`         - Burning Crusade Classic
+  * `classic_era` - Vanilla Classic
+  * `vanilla`     - Vanilla Classic
 
 ### branch ###
   * `live` - Default
@@ -16,7 +22,7 @@ Usage:
   * `beta`
 
 ### filter ###
-  * `all` - Default
+  * `all`  - Default
   * `code`
   * `art`
 
