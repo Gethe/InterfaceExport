@@ -172,15 +172,10 @@ local GetFileList do
         if fileFilter[(name:match("%.(...)$") or ""):lower()] == fileType then
             path = path:gsub("[/\\]+", "/")
 
-            local shortPath = path
-            if filter ~= "all" then
-                shortPath = shortPath:gsub("[Ii][Nn][Tt][Ee][Rr][Ff][Aa][Cc][Ee]/", "")
-            end
             --print("CheckFile", path)
             files[#files + 1] = {
-                path = shortPath,
+                path = path,
                 id = id,
-                shortPath = shortPath .. name,
                 fullPath = path .. name,
             }
         end
@@ -199,7 +194,7 @@ local GetFileList do
 
             local fileData = assert(fileHandle:readFile("DBFilesClient/ManifestInterfaceData.db2"))
             for id, path, name in dbc.rows(fileData, "ss") do
-                if path:match("^[Ii][Nn][Tt][Ee][Rr][Ff][Aa][Cc][Ee][\\/]") then
+                if path:match("^[Ii][Nn][Tt][Ee][Rr][Ff][Aa][Cc][Ee][\\/_]") then
                     CheckFile(fileType, files, id, path, name)
                 end
             end
@@ -238,7 +233,7 @@ local CreateDirectories do
     function CreateDirectories(files, root)
         local dirs = {}
         for i = 1, #files do
-            local path = files[i].shortPath
+            local path = files[i].fullPath
             for endPoint in path:gmatch("()/") do
                 local subPath = path:sub(1, endPoint - 1)
                 local subLower = subPath:lower()
@@ -290,7 +285,7 @@ local ExtractFiles do
         for i = 1, #files do
             UpdateProgress(i / #files)
             file = files[i]
-            filePath = file.shortPath
+            filePath = file.fullPath
             fixedCase = (filePath:gsub("[^/]+()/", FixCase))
             w = fileHandle:readFile(file.fullPath)
             if w then
