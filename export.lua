@@ -45,7 +45,7 @@ if project then
         branch = nil
     end
 
-    if project == "classic" and branch == "ptr" then
+    if project ~= "retail" and branch == "ptr" then
         branch = "ptrC"
     end
 end
