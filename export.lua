@@ -32,17 +32,17 @@ local fileTypes = {
 if project then
     if branches[project] then
         branch, filter = project, branch
-        project = nil
+        project = "retail"
     end
 
     if fileTypes[project] then
         filter = project
-        project = nil
+        project = "retail"
     end
 
     if fileTypes[branch] then
         filter = branch
-        branch = nil
+        branch = "live"
     end
 
     if project ~= "retail" and branch == "ptr" then
@@ -50,8 +50,6 @@ if project then
     end
 end
 
-project = project or "retail"
-branch = branch or "live"
 filter = filter or "all"
 
 write("Extracting %s from %s %s...", filter, project, branch)
