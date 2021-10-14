@@ -38,6 +38,7 @@ if project then
     if fileTypes[project] then
         filter = project
         project = "retail"
+        branch = "live"
     end
 
     if fileTypes[branch] then
@@ -48,6 +49,8 @@ if project then
     if project ~= "retail" and branch == "ptr" then
         branch = "ptrC"
     end
+else
+    project, branch, filter = "retail", "live", "all"
 end
 
 filter = filter or "all"
