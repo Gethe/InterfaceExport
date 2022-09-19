@@ -140,9 +140,10 @@ local fileHandle do
         cdn = cdn,
         ckey = ckey,
         cache = CACHE_DIR,
+        cacheFiles = true,
         locale = casc.locale.US,
         requireRootFile = false,
-        verifyHashes = false,
+        --verifyHashes = false,
         --log = print
     }
 
