@@ -212,9 +212,9 @@ local progress = 0
 local collectgarbage = _G.collectgarbage
 local gcLimit = 1024 * 1024
 local function UpdateProgress(current)
-    if collectgarbage("count") > gcLimit then
-        collectgarbage()
-    end
+    --if collectgarbage("count") > gcLimit then
+    --    collectgarbage()
+    --end
 
     if (current - progress) > 0.1 then
         write("%d%%", current * 100)
@@ -258,7 +258,7 @@ local CreateDirectories do
         for i = 1, #makeDirs do
             --print("make dir", root, makeDirs[i])
             plat.mkdir(plat.path(root, makeDirs[i]))
-            --UpdateProgress(i / #makeDirs)
+            UpdateProgress(i / #makeDirs)
         end
 
         return dirs
@@ -295,10 +295,10 @@ local ExtractFiles do
                 h:write(w)
                 h:close()
             else
-                --print("fail", file.path, filePath)
+                print("fail", file.path, filePath)
                 fails[file.path:lower()] = file.path
             end
-            --UpdateProgress(i / #files)
+            UpdateProgress(i / #files)
         end
 
 
@@ -306,7 +306,7 @@ local ExtractFiles do
             file = assert(io.open("fails"..fileType..".txt", "w"))
             for pathLower, path in next, fails do
                 if rmdir(plat.path(root, path)) then
-                    --print("failed", path)
+                    print("failed", path)
                     file:write(path, "\n")
                 end
             end
