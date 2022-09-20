@@ -144,7 +144,7 @@ local fileHandle do
         locale = casc.locale.US,
         requireRootFile = false,
         --verifyHashes = false,
-        log = print
+        --log = print
     }
 
     fileHandle = assert(casc.open(conf))
@@ -256,8 +256,12 @@ local CreateDirectories do
         write("Creating %d folders...", #makeDirs)
         plat.mkdir(root)
         for i = 1, #makeDirs do
-            --print("make dir", root, makeDirs[i])
-            plat.mkdir(plat.path(root, makeDirs[i]))
+            if plat.mkdir(plat.path(root, makeDirs[i])) then
+                write("Create folder: %s", makeDirs[i])
+            else
+                write("Could not create folder: %s", makeDirs[i])
+            end
+
             UpdateProgress(i / #makeDirs)
         end
 
@@ -276,37 +280,43 @@ local ExtractFiles do
         local dirs = CreateDirectories(files, root)
 
         local file, filePath, fixedCase
-        local fails, w, h = {}
         local function FixCase(b)
             local s = filePath:sub(1, b - 1)
             --print("fixedCase", filePath, b, s)
             return dirs[s:lower()]:match("([^/]+/)$")
         end
 
+        local pathStatus, w, h = {}, {}
         write("Creating %d files...", #files)
         for i = 1, #files do
             file = files[i]
             filePath = file.fullPath
             fixedCase = (filePath:gsub("[^/]+()/", FixCase))
+            if not pathStatus[file.path] then
+                pathStatus[file.path] = 0
+            end
+
             w = fileHandle:readFile(file.fullPath)
             if w then
-                write("create %s", fixedCase)
+                write("Create file: %s", fixedCase)
                 h = io.open(plat.path(root, fixedCase), "wb")
                 h:write(w)
                 h:close()
+                pathStatus[file.path] = pathStatus[file.path] + 1
             else
-                print("fail", file.path, filePath)
-                fails[file.path:lower()] = file.path
+                write("No data for file %s", filePath)
+                pathStatus[file.path] = pathStatus[file.path] - 1
             end
             UpdateProgress(i / #files)
         end
 
 
-        if next(fails) then
+        write("Cleaning up empty directories...")
+        if next(pathStatus) then
             file = assert(io.open("fails"..fileType..".txt", "w"))
-            for pathLower, path in next, fails do
-                if rmdir(plat.path(root, path)) then
-                    print("failed", path)
+            for path, total in next, pathStatus do
+                if total <= 0 and rmdir(plat.path(root, path)) then
+                    print("Removed:", path)
                     file:write(path, "\n")
                 end
             end
