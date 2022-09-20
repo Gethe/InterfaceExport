@@ -144,7 +144,7 @@ local fileHandle do
         locale = casc.locale.US,
         requireRootFile = false,
         --verifyHashes = false,
-        --log = print
+        log = print
     }
 
     fileHandle = assert(casc.open(conf))
