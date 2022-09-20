@@ -257,8 +257,8 @@ local CreateDirectories do
         plat.mkdir(root)
         for i = 1, #makeDirs do
             --print("make dir", root, makeDirs[i])
-            UpdateProgress(i / #makeDirs)
             plat.mkdir(plat.path(root, makeDirs[i]))
+            --UpdateProgress(i / #makeDirs)
         end
 
         return dirs
@@ -285,7 +285,6 @@ local ExtractFiles do
 
         write("Creating %d files...", #files)
         for i = 1, #files do
-            UpdateProgress(i / #files)
             file = files[i]
             filePath = file.fullPath
             fixedCase = (filePath:gsub("[^/]+()/", FixCase))
@@ -299,6 +298,7 @@ local ExtractFiles do
                 --print("fail", file.path, filePath)
                 fails[file.path:lower()] = file.path
             end
+            --UpdateProgress(i / #files)
         end
 
 
