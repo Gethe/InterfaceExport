@@ -299,13 +299,16 @@ local ExtractFiles do
             w = fileHandle:readFile(file.fullPath)
             if w then
                 write("Create file: %s", fixedCase)
-                h = io.open(plat.path(root, fixedCase), "wb")
+                h, err = io.open(plat.path(root, fixedCase), "wb")
+                if h then
                 h:write(w)
                 h:close()
                 pathStatus[file.path] = pathStatus[file.path] + 1
+                else
+                    write("Could not open file %s: %s", filePath, err)
+                end
             else
                 write("No data for file %s", filePath)
-                pathStatus[file.path] = pathStatus[file.path] - 1
             end
             UpdateProgress(i / #files)
         end
