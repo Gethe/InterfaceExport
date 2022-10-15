@@ -55,6 +55,11 @@ end
 
 filter = filter or "all"
 
+--[[
+    TODO: Add and `latest` branch that will search
+    all branches for the newest version.
+]]
+
 write("Extracting %s from %s %s...", filter, project, branch)
 local product = projects[project] .. branches[branch]
 
@@ -209,8 +214,6 @@ end
 
 
 local progress = 0
-local collectgarbage = _G.collectgarbage
-local gcLimit = 1024 * 1024
 local function UpdateProgress(current)
     --if collectgarbage("count") > gcLimit then
     --    collectgarbage()
@@ -286,7 +289,7 @@ local ExtractFiles do
             return dirs[s:lower()]:match("([^/]+/)$")
         end
 
-        local pathStatus, w, h = {}, {}
+        local pathStatus, w, h, err = {}
         write("Creating %d files...", #files)
         for i = 1, #files do
             file = files[i]
@@ -301,9 +304,9 @@ local ExtractFiles do
                 write("Create file: %s", fixedCase)
                 h, err = io.open(plat.path(root, fixedCase), "wb")
                 if h then
-                h:write(w)
-                h:close()
-                pathStatus[file.path] = pathStatus[file.path] + 1
+                    h:write(w)
+                    h:close()
+                    pathStatus[file.path] = pathStatus[file.path] + 1
                 else
                     write("Could not open file %s: %s", filePath, err)
                 end
@@ -318,8 +321,9 @@ local ExtractFiles do
         if next(pathStatus) then
             file = assert(io.open("fails"..fileType..".txt", "w"))
             for path, total in next, pathStatus do
-                if total <= 0 and rmdir(plat.path(root, path)) then
-                    print("Removed:", path)
+                local _, status = rmdir(plat.path(root, path))
+                if total <= 0 and not status then
+                    write("Removed: %s", path)
                     file:write(path, "\n")
                 end
             end
