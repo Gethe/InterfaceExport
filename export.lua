@@ -63,18 +63,14 @@ filter = filter or "all"
 write("Extracting %s from %s %s...", filter, project, branch)
 local product = projects[project] .. branches[branch]
 
-
+package.path = ";;./InterfaceExport/libs/?.lua;./InterfaceExport/libs/?/init.lua"
 local casc = require("casc")
 local plat = require("casc.platform")
 local dbc = require("dbc")
 local csv = pcall(require, "csv")
 
-local dir_sep = package.config:sub(1,1) or "/"
-local isLinux = dir_sep == "/"
-local CUR_DIR = io.popen(isLinux and "pwd" or "cd"):read()
-
 local WOWDIR = "E:/World of Warcraft"
-local CACHE_DIR = CUR_DIR .. "/Cache/" .. product
+local CACHE_DIR = "./InterfaceExport/Cache/" .. product
 local REGION = "us"
 local PATCH_BASE = ("http://%s.patch.battle.net:1119/%s"):format(REGION, product)
 local FILEID_PATH_MAP = {
@@ -86,8 +82,10 @@ local FILEID_PATH_MAP = {
 
 local rmdir do
     -- Based on code from casc.platform
-    local command = "rmdir /s %s"
-    if isLinux then
+    local dir_sep = package and package.config and package.config:sub(1,1) or "/"
+    local command = "rmdir %s"
+    if dir_sep == '/' then
+        -- *nix
         command = "rm -r %s"
     end
     local function execute(...)
