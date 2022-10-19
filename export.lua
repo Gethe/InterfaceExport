@@ -321,10 +321,12 @@ local ExtractFiles do
         if next(pathStatus) then
             file = assert(io.open("fails"..fileType..".txt", "w"))
             for path, total in next, pathStatus do
-                local _, status = rmdir(plat.path(root, path))
-                if total <= 0 and not status then
-                    write("Removed: %s", path)
-                    file:write(path, "\n")
+                if total <= 0 then
+                    local _, status = rmdir(plat.path(root, path))
+                    if not status then
+                        write("Removed: %s", path)
+                        file:write(path, "\n")
+                    end
                 end
             end
         end
