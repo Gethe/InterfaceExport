@@ -10,9 +10,9 @@ from optparse import OptionParser
 # Setup of the command-line arguments parser
 text = "Usage: %prog [options] <root-folder>\n\nConvert (in-place) all the BLP files in <root-folder> and its subdirectories"
 parser = OptionParser(text, version="%prog 1.0")
-parser.add_option("--converter", action="store", default="BLPConverter", type="string",
+parser.add_option("--converter", action="store", default="/BLPConverter", type="string",
                   dest="converter", metavar="CONVERTER",
-                  help="Path to the BLPConverter executable")
+                  help="Relative path from this script to the BLPConverter executable")
 parser.add_option("--remove", action="store_true", default=False,
                   dest="remove", help="Remove the BLP files successfully converted")
 parser.add_option("--verbose", action="store_true", default=False,
@@ -30,10 +30,13 @@ root_folder = args[0]
 if root_folder[-1] != os.path.sep:
     root_folder += os.path.sep
 
+script_dir = os.path.dirname(os.path.realpath(__file__))
+converter_dir = script_dir + options.converter
+
 try:
-    subprocess.Popen('%s --help' % options.converter, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+    subprocess.Popen('%s --help' % converter_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
 except:
-    print "Can't execute BLPConverter at '%s'" % options.converter
+    print "Can't execute BLPConverter at '%s'" % converter_dir
     sys.exit(-1)
     
 
@@ -56,7 +59,7 @@ for root, dirs, files in os.walk(root_folder):
 
         to_convert = blps
         while len(to_convert) > 0:
-            p = subprocess.Popen('%s %s' % (options.converter, ' '.join([ '"%s"' % image for image in to_convert[0:10] ])), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+            p = subprocess.Popen('%s %s' % (converter_dir, ' '.join([ '"%s"' % image for image in to_convert[0:10] ])), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
             p.wait()
             output = p.stdout.read()
             
