@@ -54,6 +54,11 @@ else
     project, branch, filter = "retail", "live", "all"
 end
 
+local convertBLP = false
+if filter == "png" then
+    convertBLP = true
+    filter = "art"
+end
 filter = filter or "all"
 
 --[[
@@ -81,7 +86,7 @@ local FILEID_PATH_MAP = {
     ["DBFilesClient/UiTextureAtlasMember.db2"] = 897532,
 }
 
-local rmdir do
+local rmdir, convert do
     -- Based on code from casc.platform
     local dir_sep = package and package.config and package.config:sub(1,1) or "/"
     local command = "rmdir %s"
@@ -102,6 +107,12 @@ local rmdir do
     end
     function rmdir(path)
         return execute(command:format(shellEscape(path)))
+    end
+
+    -- ./libs/BLPConverter/BLPConverter UI-AbilityPanel-BotLeft
+    function convert(path)
+        write("Convert file: %s", path)
+        return execute(("./libs/BLPConverter/BLPConverter %s"):format(shellEscape(path)))
     end
 end
 
@@ -304,6 +315,10 @@ local ExtractFiles do
                     h:write(w)
                     h:close()
                     pathStatus[file.path] = pathStatus[file.path] + 1
+
+                    if convertBLP then
+                        convert(plat.path(root, file.path))
+                    end
                 else
                     write("Could not open file %s: %s", filePath, err)
                 end

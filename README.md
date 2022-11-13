@@ -12,7 +12,7 @@ Usage:
 
 These can also be used to refer to a specific WoW Classic project
 
-  * `bcc`         - Burning Crusade Classic
+  * `wrath`       - WotLK Classic
   * `classic_era` - Vanilla Classic
   * `vanilla`     - Vanilla Classic
 
@@ -25,6 +25,7 @@ These can also be used to refer to a specific WoW Classic project
   * `all`  - Default
   * `code`
   * `art`
+  * `png` - Like `art`, but also converts to png
 
 
 Tools used:
