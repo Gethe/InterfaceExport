@@ -232,10 +232,6 @@ end
 
 
 local CreateDirectories do
-    local function SortDirectories(a, b)
-        return #a < #b
-    end
-
     function CreateDirectories(files, root)
         local dirs = {}
         for i = 1, #files do
@@ -255,7 +251,7 @@ local CreateDirectories do
         for _, subPath in next, dirs do
             table.insert(makeDirs, subPath)
         end
-        table.sort(makeDirs, SortDirectories)
+        table.sort(makeDirs)
 
         write("Creating %d folders...", #makeDirs)
         plat.mkdir(root)
@@ -317,18 +313,22 @@ local ExtractFiles do
             UpdateProgress(i / #files)
         end
 
+        local emptyDirs = {}
+        for path, total in next, pathStatus do
+            if total <= 0 then
+                table.insert(emptyDirs, path)
+            end
+        end
+
+        table.sort(emptyDirs, function(a, b)
+            return a > b
+        end)
 
         write("Cleaning up empty directories...")
-        if next(pathStatus) then
-            file = assert(io.open("fails"..fileType..".txt", "w"))
-            for path, total in next, pathStatus do
-                if total <= 0 then
-                    local _, status = rmdir(plat.path(root, path))
-                    if not status then
-                        write("Removed: %s", path)
-                        file:write(path, "\n")
-                    end
-                end
+        for i = 1, #emptyDirs do
+            local _, status = rmdir(plat.path(root, emptyDirs[i]))
+            if not status then
+                write("Removed: %s", emptyDirs[i])
             end
         end
     end
