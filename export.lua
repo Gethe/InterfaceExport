@@ -212,6 +212,7 @@ local GetFileList do
             fileHandle.root:addFileIDPaths(FILEID_PATH_MAP)
 
             local fileData = assert(fileHandle:readFile("DBFilesClient/ManifestInterfaceData.db2"))
+            fileData = fileData:gsub("^WDC4", "WDC3")
             for id, path, name in dbc.rows(fileData, "ss") do
                 if path:match("^[Ii][Nn][Tt][Ee][Rr][Ff][Aa][Cc][Ee][\\/_]") then
                     CheckFile(fileType, files, id, path, name)
