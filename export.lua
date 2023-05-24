@@ -19,6 +19,7 @@ local projects = {
 local branches = {
     live = "",
     ptr = "t",
+    ptr2 = "xptr",
     beta = "_beta",
 
     -- Classic PTR

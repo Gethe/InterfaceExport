@@ -19,6 +19,7 @@ These can also be used to refer to a specific WoW Classic project
 ### branch ###
   * `live` - Default
   * `ptr`
+  * `ptr2` - Retail client only
   * `beta`
 
 ### filter ###
