@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/dbc/>
+-- SPDX-License-Identifier: Artistic-2.0
+
 local M, sbyte = {}, string.byte
 local inf, nan = math.huge, math.huge-math.huge
 
@@ -74,6 +77,17 @@ end
 function M.int32_le(s, pos)
 	local a, b, c, d = sbyte(s, (pos or 0)+1, (pos or 0) + 4)
 	return (d or 0)*256^3 + (c or 0)*256^2 + (b or 0)*256 + a - (d > 127 and 2^32 or 0)
+end
+
+function M.u32_float(u)
+	local a,b,c,d = u % 256, u % 65536, u % 16777216, u % 4294967296
+	b, c, d = (b-a)/256, (c-b)/65536, (d-c)/16777216
+	local s, e, f = d > 127 and -1 or 1, (d % 128)*2 + (c > 127 and 1 or 0), a + b*256 + (c % 128)*256^2
+	if e > 0 and e < 255 then
+		return s * (1+f/2^23) * 2^(e-127)
+	else
+		return e == 0 and (s * f/2^23 * 2^-126) or f == 0 and (s * inf) or nan
+	end
 end
 
 return M

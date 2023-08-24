@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/casc/>
+-- SPDX-License-Identifier: Artistic-2.0
+
 local M, sbyte, schar, sgsub, sformat, ssub = {}, string.byte, string.char, string.gsub, string.format, string.sub
 local inf, nan, floor, min = math.huge, math.huge-math.huge, math.floor, math.min
 local MAX_SLICE_SIZE = 4096

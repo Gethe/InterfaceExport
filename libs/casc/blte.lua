@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/casc/>
+-- SPDX-License-Identifier: Artistic-2.0
+
 local M, plat, bin = {}, require("casc.platform"), require("casc.bin")
 local uint32_le, uint32_be, decompress = bin.uint32_le, bin.uint32_be, plat.decompress
 

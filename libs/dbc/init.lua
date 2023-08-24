@@ -1,9 +1,14 @@
-local M, bin = {MAX_GUESS_ATTEMPTS=50, TARGET_TEST_SET_SIZE=100, PREFER_ERRORS=true, _VERSION="LuaDBC 1.12"}, require("dbc.bin")
+-- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/dbc/>
+-- SPDX-License-Identifier: Artistic-2.0
+
+local M, bin = {MAX_GUESS_ATTEMPTS=50, TARGET_TEST_SET_SIZE=100, PREFER_ERRORS=true, _VERSION="LuaDBC 1.13"}, require("dbc.bin")
 
 local uint32_le, int32_le = bin.uint32_le, bin.int32_le
 local float32_le, uint16_le = bin.float32_le, bin.uint16_le
 local int_le, uint_le = bin.int_le, bin.uint_le
-local pint_le, upint_le = bin.pint_le, bin.upint_le
+local pint_le, upint_le, u32_float = bin.pint_le, bin.upint_le, bin.u32_float
+
+local POSSIBLE_FLOAT_PACK_TYPES = {[1]=true, [3]=true, [4]=true}
 
 local function assertLEQ(a, b, message)
 	if a > b then
@@ -250,6 +255,10 @@ end
 local function extendType(count, sym)
 	return sym:rep(tonumber(count))
 end
+local function updateFloatScores(ic, fc, iv, fv)
+	fv = fv < 0 and -fv or fv
+	return ic+1, fc + (fv >= 1e-7 and fv <= 1e16 and 1 or fv == 0 and 0.75 or -1)
+end
 local function guessTypes(s, header, fmt)
 	local rows, fields = header.rows, header.fields
 	if rows < 1 then return ("u"):rep(fields) end
@@ -259,7 +268,7 @@ local function guessTypes(s, header, fmt)
 	local rowRelativeStrings = header.rowRelativeStrings
 	local stringShift = header.stringShift or 0
 	local stringBlockMap = header.mapStringOffset
-	local rpos = is and {} or pos do
+	local rpos = {} do
 		local t, dropPad = {}, header.dropPadding or 0
 		for i=-5,4 do t[i % rows] = 1 end
 		local sm = math.max(1,math.ceil((rows-15)/M.TARGET_TEST_SET_SIZE))
@@ -291,6 +300,24 @@ local function guessTypes(s, header, fmt)
 				ft = "F"
 			elseif fsz == 0 then
 				ft = fj and fj.packType == 1 and fj.pa3 and fj.pa3 % 2 == 1 and "i" or "u"
+				local ic, fc = 0, 0
+				for i=1, ft == "u" and POSSIBLE_FLOAT_PACK_TYPES[fj.packType] and #pos or 0 do
+					local iv
+					if fj.packType == 1 then
+						iv = upint_le(s, fj.bitSize, rpos[i]*8+fj.bitOffset)
+					elseif fj.packType == 3 or fj.packType == 4 then
+						local cf = j
+						local extraSkip, aw = fj.packType == 4 and 4*(cf-fj.firstFieldIndex) or 0, fj.packType == 4 and 4*fj.pa3 or 4
+						local ix = upint_le(s, fj.bitSize, rpos[i]*8+fj.bitOffset)
+						iv = uint_le(s, 4, fj.adOfs+extraSkip+ aw*ix)
+					end
+					if iv then
+						ic, fc = updateFloatScores(ic, fc, iv, u32_float(iv))
+					end
+				end
+				if fc > 0 and fc >= ic/1.25 then
+					ft = "f"
+				end
 			elseif fsz == 4 then
 				local sc, ic, fc, nb = 0, 0, 0, 0
 				for i=1,#pos do
@@ -306,8 +333,7 @@ local function guessTypes(s, header, fmt)
 						elseif is and cs == "" then
 							sc = sc + math.random(0, 1)
 						else
-							fv = math.abs(fv)
-							sc, ic, fc = sc - (is and uv % 256 == 0 and 0 or 1), ic + 1, fc + (fv >= 1e-7 and fv <= 1e16 and 1 or -1)
+							sc, ic, fc = sc - (is and uv % 256 == 0 and 0 or 1), updateFloatScores(ic, fc, uv, fv)
 						end
 					end
 				end
@@ -443,7 +469,7 @@ local function createUnpacker(data, header, format, loose, partID, guessedTypes)
 	
 	local ctPrefix = copy and '\t' or ''
 	local p, po = {"lid"}, {[=[-- casc.dbc:iterator
-local smatch, uint_le, int_le, float32_le, upint_le, pint_le, cov, idMap, ct, rows, stride, sbase, r0, rList, minId, dfo, fkMap, sbm = ...
+local smatch, uint_le, int_le, float32_le, upint_le, pint_le, u32_float, cov, idMap, ct, rows, stride, sbase, r0, rList, minId, dfo, fkMap, sbm = ...
 local i, ii, lid = 0, nil, nil
 return function(data)]=],
 	copy and '\tlid = ct[lid]\n\tif rows > i or lid then\n\t\tif not lid then' or '\tif rows > i then',
@@ -535,8 +561,8 @@ return function(data)]=],
 				p[#p+1], adv = cf == idf and 'lid' or ('%s(data, %d, r0*8+%d)'):format(se and "pint_le" or "upint_le", nfi.bitSize, nfi.bitOffset), 1
 				if nfi.packType == 3 or nfi.packType == 4 then
 					local extraSkip, aw = nfi.packType == 4 and 4*(cf-nfi.firstFieldIndex) or 0, nfi.packType == 4 and 4*nfi.pa3 or 4
-					p[#p] = ('%s(data, 4, %d+%d*%s)'):format(t == 'u' and 'uint_le' or 'int_le',
-						nfi.adOfs+extraSkip, aw, p[#p])
+					p[#p] = ('%s(data, 4, %d+%d*%s) %% %d'):format(t == 'u' and 'uint_le' or 'int_le',
+						nfi.adOfs+extraSkip, aw, p[#p], 2^nfi.pa2)
 				end
 			elseif t == 'u' then
 				assertLEQ(1, fsz, "Unacceptable field size (u)")
@@ -545,8 +571,16 @@ return function(data)]=],
 				assertLEQ(1, fsz, "Unacceptable field size (i)")
 				p[#p+1], adv = 'int_le(data, ' .. fsz .. ', ' .. cr .. skip .. ')', 1
 			elseif t == 'f' then
-				assertLEQ(1, fsz, "Unacceptable field size (f)")
-				p[#p+1], adv = 'float32_le(data, ' .. cr .. skip .. ')', 1
+				if nfi.packType == 1 then
+					p[#p+1], adv = ('u32_float(upint_le(data, %d, r0*8+%d))'):format(nfi.bitSize, nfi.bitOffset), 1
+				elseif nfi.packType == 3 or nfi.packType == 4 then
+					local extraSkip, aw = nfi.packType == 4 and 4*(cf-nfi.firstFieldIndex) or 0, nfi.packType == 4 and 4*nfi.pa3 or 4
+					p[#p+1], adv = ('upint_le(data, %d, r0*8+%d)'):format(nfi.bitSize, nfi.bitOffset), 1
+					p[#p] = ('u32_float(uint_le(data, 4, %d+%d*%s))'):format(nfi.adOfs+extraSkip, aw, p[#p])
+				else
+					assertLEQ(1, fsz, "Unacceptable field size (f)")
+					p[#p+1], adv = 'float32_le(data, ' .. cr .. skip .. ')', 1
+				end
 			elseif t == 'L' then
 				assert(fsz == 8, "Unacceptable field size (L)")
 				p[#p+1], adv = '{ uint_le(data, 4, ' .. cr .. skip .. '), uint_le(data, 4, ' .. cr .. skip .. '+4), m=2^32}', 1
@@ -584,7 +618,7 @@ return function(data)]=],
 	local code = table.concat(po, '\n') .. table.concat(p, ", ") .. '\n\tend\nend'
 	local minId = (header.minId or 0) == 0 and 1 or header.minId
 	defaultOverrides = next(defaultOverrides) and defaultOverrides or nil
-	return (loadstring or load)(code)(string.match, uint_le, int_le, float32_le, upint_le, pint_le,
+	return (loadstring or load)(code)(string.match, uint_le, int_le, float32_le, upint_le, pint_le, u32_float,
 			header.coVals, header.idMap, copy, rows, stride, sbase, rbase - stride, header.rowList, minId, defaultOverrides, fkMap,
 			stringBlockMap
 	), fi and (header.stride - (fields+1-cf)) or skip
@@ -839,7 +873,8 @@ local headerParsers do
 			return h
 		end
 	end
-	local function dc3(data)
+	local function dc34(data)
+		local is4 = data:sub(1,4) == 'WDC4'
 		local h, feat = {parts={}}, {}
 		h.rows, h.fields, h.stride, h.stringLength = uint32_le(data, 4), uint32_le(data, 8), uint32_le(data, 12), uint32_le(data, 16)
 		h.minId, h.maxId, h.locale = uint32_le(data, 28), uint32_le(data, 32), uint32_le(data, 36)
@@ -852,8 +887,9 @@ local headerParsers do
 		local numParts = uint32_le(data, 68)
 		local fieldInfoPos = 72 + numParts*40
 		local packPos = packLength > 0 and (fieldInfoPos + 4*h.fields)
-		assert(h.fields == h.fields2, "DC3 header fields/fields2 values are inconsistent")
-		assert(packLength == 0 or packLength/24 == h.fields, "DC3 packing parity check")
+		assert(h.fields == h.fields2, "DC3/4 header fields/fields2 values are inconsistent")
+		assert(packLength == 0 or packLength/24 == h.fields, "DC3/4 packing parity check")
+		local eidLength, eidPos = 0, (packPos or fieldInfoPos) + packLength + palLength + codLength
 		
 		local hasExternalPrimaryID, hasStringBlock, hasInlineStrings, hasForeignKey = false, false, false, false
 		local partMeta = {__index=h}
@@ -885,7 +921,7 @@ local headerParsers do
 				pt.idmOffset, hasExternalPrimaryID, p = p, true, p + pt.idmLength
 			end
 			if pt.cloneLength > 0 then
-				assert(pt.cloneLength % 8 == 0, 'DC3 row cloning length parity check')
+				assert(pt.cloneLength % 8 == 0, 'DC3/4 row cloning length parity check')
 				pt.cloneOffset, p = p, p + pt.cloneLength
 			end
 			if pt.rowListEntries > 0 then
@@ -899,7 +935,7 @@ local headerParsers do
 			end
 			pt.partEndOffset = p
 			pt.isPresent = (data:match("()%Z", pt.rowBase) or pt.partEndOffset) < pt.partEndOffset
-			assertLEQ(pt.partEndOffset, #data, "DC3 data too short")
+			assertLEQ(pt.partEndOffset, #data, "DC3/4 data too short")
 			
 			if pt.isPresent then
 				if pt.rowListOffset and pt.rows > 0 then
@@ -907,7 +943,7 @@ local headerParsers do
 					local ot, minLen, maxLen, sz = {}, math.huge, -math.huge
 					for i=1, pt.rowListEntries do
 						lp, sz = lp + 6, uint16_le(data, lp+4)
-						if sz <= 0 then error('Unexpected zero-length row in DC3') end
+						if sz <= 0 then error('DC3/4 unexpected zero-length row') end
 						ot[i], ip = {uint32_le(data, ip), uint32_le(data, lp-6), sz}, ip + 4
 						minLen, maxLen = minLen < sz and minLen or sz, maxLen > sz and maxLen or sz
 					end
@@ -920,7 +956,7 @@ local headerParsers do
 					if M.PREFER_ERRORS and pt.idmLength > 0 then
 						local idmd = data:sub(pt.idmOffset+1, pt.idmOffset+pt.idmLength)
 						local rlid = data:sub(pt.rowIDListOffset+1, pt.rowIDListOffset+4*pt.rowListEntries)
-						assert(idmd == rlid, "DC3 primary key disagreement")
+						assert(idmd == rlid, "DC3/4 primary key disagreement")
 					else
 						feat.IgnoredIDMaps = feat.IgnoredIDMaps or pt.idmLength > 0
 					end
@@ -940,11 +976,23 @@ local headerParsers do
 				feat.MissingParts = true
 			end
 			
+			if is4 and pt.keyName ~= "0000000000000000" then
+				local eidCount = uint32_le(data, eidPos)
+				local eidPartLength = 4 + eidCount * 4
+				if eidCount < pt.rows and M.PREFER_ERRORS then
+					error("DC4 encrypted ID list underflow (part header declares more rows)")
+				end
+				eidLength, eidPos = eidLength + eidPartLength, eidPos + eidPartLength
+			end
+			
 			h.parts[i] = setmetatable(pt, partMeta)
+		end
+		for i=1, numParts do
+			assertLEQ(eidPos, h.parts[i].rowBase, "DC3/4 part data in header region")
 		end
 		if hasStringBlock then -- addressing
 			-- Use stringShift to map field-relative references to indices into a unified string block...
-			local sbi, s = {}, 0
+			local sbi, s, sn = {}, 0, 1
 			for i=#h.parts, 1, -1 do
 				local p = h.parts[i]
 				p.stringShift, s = -s - p.stringBase, s + p.rowsLength
@@ -952,7 +1000,7 @@ local headerParsers do
 			for i=1,#h.parts do
 				local p = h.parts[i]
 				if p.stringLength > 0 then
-					sbi[i+i-1], sbi[i+i] = p.stringLength + (sbi[i+i-3] or 0), p.stringBase - (sbi[i+i-3] or 0)
+					sbi[sn], sbi[sn+1], sn = p.stringLength + (sbi[i+i-3] or 0), p.stringBase - (sbi[i+i-3] or 0), sn+2
 				end
 			end
 			-- ... then convert unified string block indices to indices into the original data.
@@ -976,7 +1024,7 @@ local headerParsers do
 			end
 		end
 		if M.PREFER_ERRORS and hasInlineStrings and hasStringBlock then
-			error("DC3 mixing in-line and block strings is unsupported")
+			error("DC3/4 decoder does not support mixing in-line strings and string blocks")
 		end
 		h.inlineStrings = hasInlineStrings
 		
@@ -1000,10 +1048,10 @@ local headerParsers do
 				fi.packType, fi.pa1, fi.pa2, fi.pa3 = uint32_le(data, packPos+8), uint32_le(data, packPos+12), uint32_le(data, packPos+16), uint32_le(data, packPos+20)
 				packPos = packPos + 24
 				if not (fi.packType == 0 or sz == 0 or fi.bitSize == sz) then
-					error(('DC3 field/packing width mismatch: field %d, pack %d, sz %d, bsz %d'):format(i, fi.packType, sz, fi.bitSize))
+					error(('DC3/4 field/packing width mismatch: field %d, pack %d, sz %d, bsz %d'):format(i, fi.packType, sz, fi.bitSize))
 				end
 				if fi.packType == 0 and fi.bitSize ~= sz and sz > 0 then
-					assert(fi.bitSize % sz == 0, 'DC3 array field width parity check')
+					assert(fi.bitSize % sz == 0, 'DC3/4 array field width parity check')
 					basicArrayFields = basicArrayFields + (fi.bitSize/sz-1)
 					for j=2,fi.bitSize/sz do
 						finfo[#finfo+1] = {sz/8, ofs+sz*(j-1)}
@@ -1012,7 +1060,7 @@ local headerParsers do
 				elseif fi.packType == 2 then
 					fi.adOfs, adOffsetCO = adOffsetCO, adOffsetCO + fi.adLength
 				else
-					assert(fi.packType == 3 or fi.packType == 4, "DC3 unsupported field packing type: " .. fi.packType)
+					assert(fi.packType == 3 or fi.packType == 4, "DC3/4 field packing type " .. tostring(fi.packType) .. " not implemented")
 					fi.adOfs, adOffsetPA = adOffsetPA, adOffsetPA + fi.adLength
 					if fi.packType == 4 and fi.pa3 >= 1 then
 						fi.firstFieldIndex, extraArrayFields = #finfo, extraArrayFields + fi.pa3 - 1
@@ -1047,7 +1095,7 @@ local headerParsers do
 		WDBC=dbc, WDB2=db2, WCH2=db2,
 		WDB5=db56, WDB6=db56,
 		WDC1=dc12, WDC2=dc12, ["1SLC"]=dc12,
-		WDC3=dc3,
+		WDC3=dc34, WDC4=dc34,
 	}
 end
 
