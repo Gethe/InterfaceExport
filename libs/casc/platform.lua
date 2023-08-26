@@ -1,4 +1,7 @@
-local M, assert, getenv = {_IMPL={}}, assert, os.getenv
+-- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/casc/>
+-- SPDX-License-Identifier: Artistic-2.0
+
+local M, assert = {_IMPL={}}, assert
 
 local function maybe(m)
 	local ok, v = pcall(require, m)
@@ -12,7 +15,7 @@ local curl = not socket and maybe("luacurl") -- LuaCURL; -- http://luacurl.luafo
 local md5 = maybe("md5") -- MD5; http://keplerproject.org/md5/
 
 local function shellEscape(s)
-	return '"' .. s:gsub('"', '"\\\\""') .. '"'
+	return '"' .. s:gsub('"', '\\"') .. '"'
 end
 local function readAndDeleteFile(path)
 	local h, err = io.open(path, "rb")
@@ -34,9 +37,25 @@ local function execute(...)
 end
 
 local dir_sep = package and package.config and package.config:sub(1,1) or "/"
+M.commands =
+	dir_sep == '/' and {toDevNull=' 2>/dev/null', ls='ls %s', mkdir='mkdir -p %s', gzip='gzip -dcq %s'} or
+	dir_sep == '\\' and {toDevNull=' 2>NUL', ls='(for %%a in (%s) do @echo %%~fa)', mkdir='mkdir %s', gzip='gzip -dcq %s', TMP=os.getenv('TMP') or os.getenv('TEMP')}
+
 do -- M.path(a, b, ...)
+	local dir_sep_pq = dir_sep:gsub("[%[%].%-+*?()%%]", "%%%0")
 	M.path = function(a, b, ...)
 		if a and b then
+			while b == ".." do
+				local p, c = a:match("^(.-)([^" .. dir_sep_pq .. "]*)" .. dir_sep_pq .. "?$")
+				if c == ".." then
+					break
+				elseif p == "" and c:match(dir_sep == "\\" and "^[A-Za-z]:$" or "^$") then
+					error("bad path traversal")
+				elseif p == "" then
+					p = c == "." and ".." or "."
+				end
+				return M.path(p, ...)
+			end
 			return M.path(a .. (a:sub(-1) ~= dir_sep and dir_sep or "") .. b, ...)
 		end
 		return a
@@ -48,10 +67,6 @@ M.url = function(a, b, ...)
 	end
 	return a
 end
-
-M.commands =
-	dir_sep == '/' and {toDevNull=' 2>/dev/null', ls='ls %s', mkdir='mkdir -p %s', gzip='gzip -dcq %s'} or
-	dir_sep == '\\' and {toDevNull=' 2>NUL', ls='(for %%a in (%s) do @echo %%~fa)', mkdir='mkdir %s', gzip='gzip -dcq %s', TMP=getenv('TMP') or getenv('TEMP')}
 
 M.tmpname = function()
 	local tn = os.tmpname()
@@ -113,6 +128,7 @@ local function checkBitModule(bit, name)
 	if bit and bit.bnot and bit.bxor and bit.band and bit.bor then
 		M.rol, M.bnot, M.bxor, M.band, M.bor = bit.rol or bit.lrotate, bit.bnot, bit.bxor, bit.band, bit.bor
 		M._IMPL.bit = name
+		return true
 	end
 end
 if checkBitModule(bit, "bit module") or checkBitModule(bit32, "bit32 global") then

@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/casc/>
+-- SPDX-License-Identifier: Artistic-2.0
+
 local M = {}
 
 local jenkins96, bin = require("casc.jenkins96"), require("casc.bin")
@@ -64,12 +67,12 @@ local function parseLegacy(data)
 	local pos, dl, nameMap, idVariantMap = 0, #data, {}, {}
 	while pos < dl do
 		if dl < (pos+12) then
-			return false, 'Root file invalid: expected to read at least 12 bytes from position ' .. pos
+			return false, 'Root file invalid: block header overread', pos
 		end
 		local n, info = uint32_le(data, pos), {uint32_le(data, pos+4), uint32_le(data, pos+8)}
 		local p2, lfid = pos + 12, 0
 		if dl < (p2+28*n) then
-			return false, 'Root file invalid: expected to read at least ' .. (28*n) .. ' bytes from position ' .. p2
+			return false, 'Root file invalid: block content overread', p2 .. '+' .. (28*n)
 		end
 		pos = p2 + 4*n
 		for i=1,n do
@@ -78,7 +81,8 @@ local function parseLegacy(data)
 			pos, p2 = pos + 24, p2 + 4
 			local t, tsz = idVariantMap[tfid] or {}
 			if (nameMap[nhash] or tfid) ~= tfid then
-				return false, 'Root manifest invalid: file name name ' .. ('%02x'):rep(#nhash):format(nhash:byte(1, #nhash)) .. ' maps to multiple file IDs'
+				local hexHash = ('%02x'):rep(#nhash):format(nhash:byte(1, #nhash))
+				return false, 'Root manifest invalid: file name name maps to multiple file IDs', hexHash
 			end
 			nameMap[nhash], idVariantMap[tfid], tsz = tfid, t, #t
 			t[tsz+1], t[tsz+2], lfid = chash, info, tfid + 1
@@ -89,20 +93,28 @@ end
 
 local function parseMFST(data)
 	if #data < 16 then
-		return false, 'Root manifest invalid: expected to read at least 16 bytes from position 0'
+		return false, 'Root manifest invalid: data too short'
 	end
-	local pos, dl, nameMap, idVariantMap = 12, #data, {}, {}
+	local hSize, hVersion, nFiles, nNamedFiles = uint32_le(data, 4), uint32_le(data, 8)
+	if hVersion == 1 then
+		nFiles, nNamedFiles = uint32_le(data, 12), uint32_le(data, 16)
+	else
+		-- Legacy format omits header size and version
+		hSize, hVersion, nFiles, nNamedFiles = 12, -1, hSize, hVersion
+	end
+	local pos, dl, nameMap, idVariantMap = hSize, #data, {}, {}
 	local readFiles, readNamedFiles = 0, 0
 	local two28, two29 = 2^28, 2^29
 	while pos < dl do
 		if dl < (pos+12) then
-			return false, 'Root manifest invalid: expected to read at least 12 bytes from position ' .. pos
+			return false, 'Root manifest invalid: block header overread', pos
 		end
 		local n, info = uint32_le(data, pos), {uint32_le(data, pos+4), uint32_le(data, pos+8)}
 		local p2, p3, lfid = pos + 12, pos + 12 + 20*n, 0
-		local hasNameHashes = (info[1] % two29 < two28) and 1
-		if dl < (p2+(hasNameHashes and 28 or 20)*n) then
-			return false, 'Root manifest invalid: expected to read at least ' .. (28*n) .. ' bytes from position ' .. p2
+		local hasNameHashes = info[1] % two29 < two28
+		local bSize = (hasNameHashes and 28 or 20) * n
+		if dl < (p2+bSize) then
+			return false, 'Root manifest invalid: block content overread', p2 .. '+' .. bSize
 		end
 		pos = p2 + 4*n
 		for i=1,n do
@@ -112,21 +124,21 @@ local function parseMFST(data)
 			if hasNameHashes then
 				local nhash = ssub(data, p3+1, p3+8)
 				if (nameMap[nhash] or tfid) ~= tfid then
-					return false, 'Root manifest invalid: file name name ' .. ('%02x'):rep(#nhash):format(nhash:byte(1, #nhash)) .. ' maps to multiple file IDs'
+					local hexHash = ('%02x'):rep(#nhash):format(nhash:byte(1, #nhash))
+					return false, 'Root manifest invalid: file name name maps to multiple file IDs', hexHash
 				end
 				nameMap[nhash], p3 = tfid, p3 + 8
 			end
 			idVariantMap[tfid], tsz = t, #t
 			t[tsz+1], t[tsz+2], lfid = chash, info, tfid + 1
-			readFiles, readNamedFiles = readFiles + 1, readNamedFiles + (hasNameHashes or 0)
+			readFiles, readNamedFiles = readFiles + 1, readNamedFiles + (hasNameHashes and 1 or 0)
 		end
 		pos = p3
 	end
-	if readFiles ~= uint32_le(data, 4) then
-		return false, 'Root manifest invalid: expected ' .. uint32_le(data, 4) .. ' files; found ' .. readFiles
-	end
-	if readNamedFiles ~= uint32_le(data, 8) then
-		return false, 'Root manifest invalid: expected ' .. uint32_le(data, 8) .. ' named files; found ' .. readNamedFiles
+	if readFiles ~= nFiles then
+		return false, 'Root manifest invalid: total file miscount', nFiles .. '/' .. readFiles
+	elseif readNamedFiles ~= nNamedFiles then
+		return false, 'Root manifest invalid: named file miscount', nNamedFiles .. '/' .. readNamedFiles
 	end
 	return setmetatable({nameMap, idVariantMap}, wow_mt)
 end

@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/casc/>
+-- SPDX-License-Identifier: Artistic-2.0
+
 local M, decompress, bin = {}, require("casc.platform").decompress, require("casc.bin")
 local CONCAT_CHUNK_SIZE, CONCAT_STOP_LENGTH = 512, 16384
 

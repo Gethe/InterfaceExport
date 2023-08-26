@@ -1,3 +1,6 @@
+/* SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/casc/> */
+/* SPDX-License-Identifier: Artistic-2.0 */
+
 #include <lua.h>
 #include <lauxlib.h>
 

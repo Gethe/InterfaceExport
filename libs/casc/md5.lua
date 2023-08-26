@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/casc/>
+-- SPDX-License-Identifier: Artistic-2.0
+
 local M, bit = {}, require("casc.platform")
 local bxor, band, bor, rol, bnot = bit.bxor, bit.band, bit.bor, bit.rol, bit.bnot
 local schar, sbyte, floor = string.char, string.byte, math.floor

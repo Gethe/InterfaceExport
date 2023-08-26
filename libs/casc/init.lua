@@ -1,8 +1,11 @@
-local M = {_NAME="LuaCASC", _VERSION="LuaCASC 1.14"}
+-- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/casc/>
+-- SPDX-License-Identifier: Artistic-2.0
+
+local M = {_NAME="LuaCASC", _VERSION="LuaCASC 1.15"}
 local plat, bin = require("casc.platform"), require("casc.bin")
 local blte, bspatch = require("casc.blte"), require("casc.bspatch")
 local encoding, root = require("casc.encoding"), require("casc.root")
-local ribbit = require("casc.ribbit")
+local install, ribbit = require("casc.install"), require("casc.ribbit")
 
 local uint32_le, uint32_be, uint40_be, to_bin, to_hex, ssub
 	= bin.uint32_le, bin.uint32_be, bin.uint40_be, bin.to_bin, bin.to_hex, string.sub
@@ -21,11 +24,11 @@ local function defaultLocale(loc, tf, cdn)
 	return (loc % 0x400 < 0x200 and 0 or 2) + (tf % 16 < 8 and 1 or 0) - (cdn and 4 or 0)
 end
 
-local function checkMD5(casc, msg, hash, ...)
+local function checkMD5(casc, emsg, hash, ...)
 	if casc.verifyHashes and type((...)) == "string" then
 		local actual, expected = plat.md5((...)), #hash == 16 and to_hex(hash) or hash
 		if actual ~= expected then
-			return nil, ("%s verification failed (got %s; expected %s)"):format(msg, actual, expected)
+			return nil, emsg
 		end
 	end
 	return ...
@@ -34,29 +37,36 @@ local function maybeCheckMD5s(casc, eMD5, cMD5, ...)
 	local cnt, head, hadZerofilledContent = ...
 	if cnt then
 		if eMD5 then
-			local ok, err = checkMD5(casc, "encoding hash", eMD5, head)
+			local ok, err = checkMD5(casc, "encoding hash mismatch", eMD5, head)
 			if not ok then
 				return nil, err
 			end
 		end
 		if cMD5 then
 			if hadZerofilledContent ~= true then
-				return checkMD5(casc, "content hash", cMD5, cnt)
+				return checkMD5(casc, "content hash mismatch", cMD5, cnt)
 			else
-				casc.log("WARN", "Skipping content MD5 check; some chunks were not decrypted")
+				casc.log("WARN", "Skipping content MD5 check; some chunks were not decrypted", eMD5, cMD5)
 			end
 		end
 	end
 	return ...
 end
 
-local function check_args(name, idx, v, t1, t2, ...)
+local function checkArgs(name, idx, v, t1, t2, ...)
 	if t1 then
 		local tt = type(v)
 		if tt ~= t1 and tt ~= t2 then
 			error('Invalid argument #' .. idx .. " to " .. name .. ": expected " .. t1 .. (t2 and t2 ~= t1 and "/" .. t2 or "") .. ", got " .. tt, 3)
 		end
-		return check_args(name, idx+1, ...)
+		return checkArgs(name, idx+1, ...)
+	end
+end
+local function checkFileExists(path)
+	local h = io.open(path, "r")
+	if h then
+		h:close()
+		return true
 	end
 end
 local function readFile(...)
@@ -90,7 +100,7 @@ local function readCDN(casc, headers, ...)
 			end
 		end
 	end
-	return nil, "not available via CDN: " .. plat.url("*", ...)
+	return nil, "not available via CDN", plat.url("*", ...)
 end
 local function readCache(casc, cpath, lpath, ...)
 	local ret, err = nil, "no read requested"
@@ -214,13 +224,13 @@ local function getPatchedContent(casc, rec, ctag, cMD5)
 	return nil, err
 end
 function getContent(casc, eMD5, cMD5, ctag, useOnlyLocalData)
-	local cnt, err
+	local cnt, err, e2
 	local eMD5, ehash = adjustHash(eMD5)
 	local lcache = ctag and plat.path(casc.cache, ctag .. "." .. eMD5)
 
 	local ch = lcache and io.open(lcache, "rb")
 	if ch then
-		cnt, err = maybeCheckMD5s(casc, nil, cMD5, ch:read("*a"))
+		cnt, err, e2 = maybeCheckMD5s(casc, nil, cMD5, ch:read("*a"))
 		ch:close()
 		if cnt then return cnt end
 	end
@@ -228,21 +238,21 @@ function getContent(casc, eMD5, cMD5, ctag, useOnlyLocalData)
 	local ehash9 = ssub(ehash, 1, 9)
 	local lloc = casc.base and casc.index and casc.index[ehash9]
 	if lloc then
-		cnt, err = maybeCheckMD5s(casc, eMD5, cMD5, blte.readArchive(plat.path(casc.base, "data", ("data.%03d"):format(lloc / 2^30)), lloc % 2^30, casc.keys, casc))
+		cnt, err, e2 = maybeCheckMD5s(casc, eMD5, cMD5, blte.readArchive(plat.path(casc.base, "data", ("data.%03d"):format(lloc / 2^30)), lloc % 2^30, casc.keys, casc))
 		if cnt then return cnt end
 	end
 	
 	if casc.cdn and not useOnlyLocalData then
 		if cMD5 and casc.patchRecipes then
-			cnt, err = getPatchedContent(casc, casc.patchRecipes[toBinHash(cMD5)], ctag, cMD5)
+			cnt, err, e2 = getPatchedContent(casc, casc.patchRecipes[toBinHash(cMD5)], ctag, cMD5)
 		end
 	
 		local cloc = not cnt and (casc.indexCDN and casc.indexCDN[ehash9] or eMD5)
 		if cloc then
 			local range, name = cloc:match("(%d+%-%d+):(.+)")
-			cnt, err = readCDN(casc, range and {Range="bytes=" .. range}, "data", prefixHash(name or cloc))
+			cnt, err, e2 = readCDN(casc, range and {Range="bytes=" .. range}, "data", prefixHash(name or cloc))
 			if cnt then
-				cnt, err = maybeCheckMD5s(casc, eMD5, cMD5, blte.readData(cnt, casc.keys, casc))
+				cnt, err, e2 = maybeCheckMD5s(casc, eMD5, cMD5, blte.readData(cnt, casc.keys, casc))
 			end
 		end
 	end
@@ -254,32 +264,34 @@ function getContent(casc, eMD5, cMD5, ctag, useOnlyLocalData)
 			ch:close()
 		end
 	end
+	
 	if cnt then
 		return cnt
+	elseif err then
+		return nil, err, e2
 	end
-	
-	return nil, err or ("Could not retrieve " .. eMD5 .. "/" .. (cMD5 and toHexHash(cMD5) or "?"))
+	return nil, "could not retrieve file content", eMD5 .. "/" .. (cMD5 and toHexHash(cMD5) or "?")
 end
 local function getContentByContentHash(casc, cMD5, ctag)
 	local cMD5, chash = adjustHash(cMD5)
-	local err, cnt = "no encodings of " .. cMD5 .. " are known"
+	local err, e2, cnt = "no known encodings for content hash", cMD5
 	local keys = casc.encoding:getEncodingHash(chash)
 	
 	for j=1,keys and 2 or 0 do
 		for i=1,#keys do
-			cnt, err = getContent(casc, keys[i], cMD5, ctag, j == 1)
+			cnt, err, e2 = getContent(casc, keys[i], cMD5, ctag, j == 1)
 			if cnt then
 				return cnt
 			end
 		end
 	end
 	
-	return nil, err
+	return nil, err, e2
 end
-local function getContentHashForPath(casc, path, rateFunc)
+local function getVariantContentHash(casc, pathOrID, rateFunc)
 	local rateFunc, idx, score, seen, vscore, chash = rateFunc or casc.locale, casc.index, -math.huge
 	
-	for _, vchash, vinfo in casc.root:getFileVariants(path) do
+	for _, vchash, vinfo in casc.root:getFileVariants(pathOrID) do
 		local isLocal, keys = false, idx and casc.encoding:getEncodingHash(vchash)
 		for i=1, keys and #keys or 0 do
 			local key = keys[i]
@@ -295,9 +307,9 @@ local function getContentHashForPath(casc, path, rateFunc)
 	end
 	
 	if not seen then
-		return nil, ("no root entries for %q exist"):format(path)
+		return nil, type(pathOrID) == "string" and "path not in root file" or "fileID not in root file", pathOrID
 	elseif not chash then
-		return nil, ("no acceptable variants of %q are accessible"):format(path)
+		return nil, "no acceptable variants are accessible", pathOrID
 	end
 	return chash
 end
@@ -360,37 +372,37 @@ local handle_mt = {__index=handle}
 function handle:readFile(pathOrID, lang, cache)
 	if cache == nil then cache = self.cacheFiles end
 	lang = M.locale[lang] or lang
-	check_args("cascHandle:readFile", 1, pathOrID, "string", "number", lang, "function", "nil", cache, "boolean","nil")
+	checkArgs("cascHandle:readFile", 1, pathOrID,"string","number", lang,"function","nil", cache,"boolean","nil")
 
-	local chash, err = getContentHashForPath(self, pathOrID, lang)
+	local chash, err, e2 = getVariantContentHash(self, pathOrID, lang)
 	if not chash then
-		return nil, err
+		return nil, err, e2
 	end
 	
 	return getContentByContentHash(self, chash, cache and "file")
 end
 function handle:readFileByEncodingHash(ehash, cache)
 	if cache == nil then cache = self.cacheFiles end
-	check_args("cascHandle:readFileByEncodingHash", 1, ehash,"string","string", cache,"boolean","nil")
+	checkArgs("cascHandle:readFileByEncodingHash", 1, ehash,"string",nil, cache,"boolean","nil")
 	return getContent(self, ehash, nil, cache and "file")
 end
 function handle:readFileByContentHash(chash, cache)
 	if cache == nil then cache = self.cacheFiles end
-	check_args("cascHandle:readFileByContentHash", 1, chash, "string", "string", cache,"boolean","nil")
+	checkArgs("cascHandle:readFileByContentHash", 1, chash,"string",nil, cache,"boolean","nil")
 	return getContentByContentHash(self, chash, cache and "file")
 end
 function handle:getFileContentHash(pathOrID, lang)
 	lang = M.locale[lang] or lang
-	check_args("cascHandle:getFileContentHash", 1, pathOrID, "string", "number", lang, "function", "nil")
+	checkArgs("cascHandle:getFileContentHash", 1, pathOrID,"string","number", lang,"function","nil")
 
-	local chash, err = getContentHashForPath(self, pathOrID, lang)
+	local chash, err, e2 = getVariantContentHash(self, pathOrID, lang)
 	if not chash then
-		return nil, err
+		return nil, err, e2
 	end
 	return toHexHash(chash)
 end
 function handle:getFileVariants(pathOrID)
-	check_args("cascHandle:getFileVariants", 1, pathOrID, "string", "number")
+	checkArgs("cascHandle:getFileVariants", 1, pathOrID,"string","number")
 
 	local ret, seen = {}, {}
 	for _, vchash, vinfo in self.root:getFileVariants(pathOrID) do
@@ -404,13 +416,12 @@ function handle:getFileVariants(pathOrID)
 	end
 	
 	if not next(ret) then
-		local msg = ("no variants of %s are known"):format(type(pathOrID) == "number" and "%d" or "%q")
-		return nil, msg:format(pathOrID)
+		return nil, "no known variants"
 	end
 	return ret
 end
 function handle:setLocale(locale)
-	check_args("cascHandle:setLocale", 1, M.locale[locale] or locale, "function", "nil")
+	checkArgs("cascHandle:setLocale", 1, M.locale[locale] or locale,"function","nil")
 	self.locale = M.locale[locale] or locale or defaultLocale
 end
 function handle_mt:__tostring()
@@ -418,6 +429,19 @@ function handle_mt:__tostring()
 	return ("CASC: <%s;%s %s;%s>"):format(tostring(self.base), cdns, tostring(self.bkey), tostring(self.ckey))
 end
 
+local function selectLocalBuild(path)
+	local buildInfoPath = plat.path(path, ".build.info")
+	if checkFileExists(buildInfoPath) then
+		return path, M.localbuild(buildInfoPath, M.selectActiveBuild)
+	end
+	buildInfoPath = plat.path(path, "..", ".build.info")
+	local fi = checkFileExists(buildInfoPath) and readFile(plat.path(path, ".flavor.info"))
+	fi = fi and parseInfoData(fi)
+	local product = fi and fi[1] and fi[1]["Product Flavor"]
+	if product then
+		return plat.path(path, ".."), M.localbuild(buildInfoPath, M.selectActiveBuild, product)
+	end
+end
 local function parseOpenArgs(...)
 	local conf, extra = ...
 	if type(conf) == "table" then
@@ -443,7 +467,7 @@ local function parseOpenArgs(...)
 		conf.log = conf.log == nil and defaultLog or conf.log
 		conf.usePatchEntries = conf.usePatchEntries == nil or conf.usePatchEntries
 		conf.mergeInstall = conf.mergeInstall ~= nil or conf.mergeInstall or false
-		conf.requireRootFile = conf.requireRootFile or false
+		conf.requireRootFile = conf.requireRootFile ~= false
 		conf.cacheFiles = conf.cacheFiles or false
 		conf.zerofillEncryptedChunks = conf.zerofillEncryptedChunks or false
 		assert(conf.locale == nil or type(conf.locale) == 'function', 'casc.open: if specified, conf.locale must be a function or a valid casc.locale key')
@@ -475,12 +499,11 @@ local function parseOpenArgs(...)
 		if conf:match("^%a+://.+#.") then
 			build, cdn, cdnKey, _, info = M.cdnbuild(conf:match("(.+)#(.+)"))
 		else
-			build, cdn, cdnKey, _, info = M.localbuild(plat.path(conf, ".build.info"), M.selectActiveBuild)
-			for i=1,build and #DATA_DIRECTORIES or 0 do
-				base = plat.path(conf, DATA_DIRECTORIES[i])
-				local ch = io.open(plat.path(base, "config", prefixHash(build)), "r")
-				if ch then
-					ch:close()
+			local cbase
+			cbase, build, cdn, cdnKey, _, info = selectLocalBuild(conf)
+			for i=1, cbase and build and #DATA_DIRECTORIES or 0 do
+				base = plat.path(cbase, DATA_DIRECTORIES[i])
+				if checkFileExists(plat.path(base, "config", prefixHash(build))) then
 					break
 				end
 				base = nil
@@ -501,7 +524,7 @@ local function parseOpenArgs(...)
 end
 
 function M.conf(root, options)
-	check_args("casc.conf", 1, root,"string",nil, options,"table","nil")
+	checkArgs("casc.conf", 1, root,"string",nil, options,"table","nil")
 	return parseOpenArgs(root, options)
 end
 function M.open(conf, ...)
@@ -511,13 +534,13 @@ function M.open(conf, ...)
 	if not casc.keys then return nil, err end
 	
 	casc.log("OPEN", "Loading build configuration", casc.bkey)
-	local cdat, err = checkMD5(casc, "hash", casc.bkey, readCacheCommon(casc, "build." .. casc.bkey, "config", prefixHash(casc.bkey)))
+	local cdat, err = checkMD5(casc, "build configuration hash mismatch", casc.bkey, readCacheCommon(casc, "build." .. casc.bkey, "config", prefixHash(casc.bkey)))
 	if not cdat then return nil, "build configuration: " .. tostring(err) end
 	casc.conf = parseConfigData(cdat)
 	
 	if casc.ckey then
 		casc.log("OPEN", "Loading CDN configuration", casc.ckey)
-		local ccdat, err = checkMD5(casc, "hash", casc.ckey, readCacheCommon(casc, "cdn." .. casc.ckey, "config", prefixHash(casc.ckey)))
+		local ccdat, err = checkMD5(casc, "CDN configuration hash mismatch", casc.ckey, readCacheCommon(casc, "cdn." .. casc.ckey, "config", prefixHash(casc.ckey)))
 		if not ccdat then return nil, "cdn configuration: " .. tostring(err) end
 		parseConfigData(ccdat, casc.conf)
 		local source, archives = {}, casc.conf.archives
@@ -550,7 +573,7 @@ function M.open(conf, ...)
 	local pckey, pdkey = casc.conf["patch-config"] and casc.conf["patch-config"][1], casc.conf.patch and casc.conf.patch[1]
 	if pckey and pdkey and casc.usePatchEntries then
 		casc.log("OPEN", "Loading patch configuration", pckey)
-		local pcdat, err = checkMD5(casc, "hash", pckey, readCacheCommon(casc, "pconf." .. pckey, "config", prefixHash(pckey)) )
+		local pcdat, err = checkMD5(casc, "Patch configuration hash mismatch", pckey, readCacheCommon(casc, "pconf." .. pckey, "config", prefixHash(pckey)) )
 		if not pcdat then return nil, "patch configuration: " .. tostring(err) end
 		parseConfigData(pcdat, casc.conf)
 		
@@ -576,16 +599,16 @@ function M.open(conf, ...)
 	
 	local rkey = casc.conf.root[1]
 	casc.log("OPEN", "Loading root file", rkey)
-	local rdat, err = getContentByContentHash(casc, rkey, "root")
+	local rdat, err, e2 = getContentByContentHash(casc, rkey, "root")
 	if rdat then
-		casc.root, err = root.parse(rdat)
+		casc.root, err, e2 = root.parse(rdat)
 	end
 	if not casc.root then
 		if casc.requireRootFile then
-			return nil, "root file: " .. tostring(err)
+			return nil, "root file: " .. tostring(err), e2
 		end
 		casc.root = root.empty()
-		casc.log("FAIL", err or "Failed to load root file", rkey)
+		casc.log("FAIL", err or "Failed to load root file", rkey, e2)
 	end
 	casc.requireRootFile = nil
 	
@@ -599,7 +622,7 @@ function M.open(conf, ...)
 		local ins, err = getContentByContentHash(casc, ikey, "install")
 		if not ins then return nil, "missing install file: " .. tostring(err) end
 		local universal, filter = {0, 0xffffff}, casc.mergeInstall ~= true and casc.mergeInstall or nil
-		for name, hash in require("casc.install").files(ins, filter) do
+		for name, hash in install.files(ins, filter) do
 			casc.root:addFileVariant(name, hash, universal)
 		end
 	else
@@ -638,7 +661,7 @@ local function retrieveCDNVersionsInfo(patchBase)
 end
 
 function M.cdnbuild(patchBase, region)
-	check_args("casc.cdnbuild", 1, patchBase, "string", "string", region, "string", "nil")
+	checkArgs("casc.cdnbuild", 1, patchBase,"string",nil, region,"string","nil")
 	
 	local versions, cdns = retrieveCDNVersionsInfo(patchBase)
 	if not versions then return nil, cdns end
@@ -663,8 +686,8 @@ function M.cdnbuild(patchBase, region)
 		return reginfo, versions, cdns
 	end
 end
-function M.localbuild(buildInfoPath, selectBuild)
-	check_args("casc.localbuild", 1, buildInfoPath, "string", "string", selectBuild, "function", "nil")
+function M.localbuild(buildInfoPath, selectBuild, product)
+	checkArgs("casc.localbuild", 1, buildInfoPath,"string",nil, selectBuild,"function","nil", product,"string","nil")
 	
 	local dat, err = readFile(buildInfoPath)
 	if not dat then return nil, err end
@@ -681,19 +704,23 @@ function M.localbuild(buildInfoPath, selectBuild)
 		for i=1,#info do
 			local ii = info[i]
 			local cdn = splitCDNHosts(ii["CDN Hosts"], ii["CDN Path"])
-			branches[ii.Branch] = {cdnKey=ii["CDN Key"], buildKey=ii["Build Key"], version=ii["Version"], cdnBase=cdn}
+			branches[ii.Branch] = {cdnKey=ii["CDN Key"], buildKey=ii["Build Key"], version=ii["Version"], cdnBase=cdn, product=ii["Product"]}
 		end
 		return branches, info
 	end
 end
-function M.selectActiveBuild(buildInfo)
-	check_args("casc.selectActiveBuild", 1, buildInfo, "table", "table")
-	
+function M.selectActiveBuild(buildInfo, product)
+	checkArgs("casc.selectActiveBuild", 1, buildInfo,"table",nil, product,"string","nil")
+	local r
 	for i=1,#buildInfo do
-		if buildInfo[i].Active == 1 then
-			return i
+		if product == nil or buildInfo[i].Product == product then
+			if buildInfo[i].Active == 1 then
+				return i
+			end
+			r = i
 		end
 	end
+	return product and r or nil
 end
 
 return M
