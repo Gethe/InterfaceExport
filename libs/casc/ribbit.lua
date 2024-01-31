@@ -4,7 +4,6 @@
 local M = {}
 local plat = require("casc.platform")
 
-
 function M.retrieveProductInfo(hostport, product, infoFile)
 	if type(hostport) ~= "string" or type(product) ~= "string" or type(infoFile) ~= "string" then
 		error('Syntax: ribbit.retrieveProductInfo("host[:port]", "product", "infoFile")', 2)
@@ -12,27 +11,29 @@ function M.retrieveProductInfo(hostport, product, infoFile)
 	if not plat.socketQuery then
 		return nil, "ribbit requires socket access"
 	end
-	
 	local host, port = hostport:match("^([^:]+):(%d+)$")
 	if not host then
 		host, port = hostport, 1119
 	end
+
 	local data, err = plat.socketQuery(host, port+0, "v1/products/" .. product .. "/" .. infoFile .. "\r\n")
 	if not data then
 		return nil, "socket error: " .. tostring(err)
 	end
-	
-	local dkey = data:match([[^Content%-Type: multipart/alternative; boundary="([^"]+)"]])
-	if not dkey then
+	local headers, restStart = data:match("^(.-)\r\n()\r\n")
+	local boundary = headers and ("\r\n" .. headers):match('\r\nContent%-Type: multipart/alternative; boundary="([^"]+)"')
+	if not boundary then
 		return nil, "multipart reply expected; found no boundary"
 	end
+
 	local segments = {}
-	local boundaryText, finalBoundaryText = "\r\n--" .. dkey .. "\r\n", "\r\n--" .. dkey .. "--\r\n"
-	local bp, bpE = string.find(data, boundaryText, 1, true)
+	local boundaryText, finalBoundaryText = "\r\n--" .. boundary .. "\r\n", "\r\n--" .. boundary .. "--\r\n"
+	local bp, bpE = string.find(data, boundaryText, restStart, true)
 	repeat
-		local np, npE = string.find(data, boundaryText, bpE, true)
+		local isFinal, np, npE = false, string.find(data, boundaryText, bpE, true)
 		if not np then
 			np, npE = string.find(data, finalBoundaryText, bpE, true)
+			isFinal = np or error("ribbit: missing final boundary in multipart reply")
 		end
 		if np then
 			local segment, headers, body = data:sub(bpE+1, np-2)
@@ -44,8 +45,8 @@ function M.retrieveProductInfo(hostport, product, infoFile)
 			segments[#segments+1] = {body=body, headers=headers}
 			bp, bpE = np, npE
 		end
-	until not np
-	-- There may be additioanl headers after the final boundary, but let's just ignore that.
+	until isFinal
+	-- There is a checksum header past the final boundary; ignore it.
 
 	if segments[1] then
 		return segments[1].body

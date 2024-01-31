@@ -1,128 +1,79 @@
 -- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/casc/>
 -- SPDX-License-Identifier: Artistic-2.0
 
-local M, assert = {_IMPL={}}, assert
+local M = {_IMPL={}}
 
 local function maybe(m)
 	local ok, v = pcall(require, m)
 	return ok and v
 end
-local lfs = maybe("lfs") -- LuaFileSystem; http://keplerproject.github.io/luafilesystem/
-local zlib = maybe("zlib") -- lzlib; https://github.com/LuaDist/lzlib
-local bit = maybe("bit") -- Lua BitOp; http://bitop.luajit.org
-local socket = maybe("socket.http") -- LuaSocket; http://w3.impa.br/~diego/software/luasocket/home.html
-local curl = not socket and maybe("luacurl") -- LuaCURL; -- http://luacurl.luaforge.net
-local md5 = maybe("md5") -- MD5; http://keplerproject.org/md5/
 
-local function shellEscape(s)
-	return '"' .. s:gsub('"', '\\"') .. '"'
-end
-local function readAndDeleteFile(path)
-	local h, err = io.open(path, "rb")
-	if h then
-		local c = h:read("*a")
-		h:close()
-		h, err = c, nil
-	end
-	os.remove(path)
-	return h, err
-end
-local function execute(...)
-	local ok, status, sig = os.execute(...)
-	if ok == true and status == "exit" or status == "signal" then
-		return sig
-	else
-		return ok or sig or ok, status, sig
-	end
-end
+local lfs = maybe("lfs") -- LuaFileSystem; https://github.com/lunarmodules/luafilesystem
+local zlib = maybe("zlib") -- lzlib; https://github.com/LuaDist/lzlib
+local bit = maybe("bit") -- Lua BitOp; https://bitop.luajit.org
+local socket = maybe("socket.http") -- LuaSocket; https://github.com/lunarmodules/luasocket
+local socket_root, socket_ltn12 = socket and maybe("socket"), socket and maybe("ltn12")
+local curl = not (socket_root and socket_ltn12) and maybe("luacurl") -- LuaCURL; -- https://luarocks.org/modules/luarocks/luacurl
+local md5 = maybe("md5") -- MD5; https://github.com/lunarmodules/md5
 
 local dir_sep = package and package.config and package.config:sub(1,1) or "/"
-M.commands =
-	dir_sep == '/' and {toDevNull=' 2>/dev/null', ls='ls %s', mkdir='mkdir -p %s', gzip='gzip -dcq %s'} or
-	dir_sep == '\\' and {toDevNull=' 2>NUL', ls='(for %%a in (%s) do @echo %%~fa)', mkdir='mkdir %s', gzip='gzip -dcq %s', TMP=os.getenv('TMP') or os.getenv('TEMP')}
+local dir_sep_pq = dir_sep:gsub("[%[%].%-+*?()%%]", "%%%0")
 
-do -- M.path(a, b, ...)
-	local dir_sep_pq = dir_sep:gsub("[%[%].%-+*?()%%]", "%%%0")
-	M.path = function(a, b, ...)
-		if a and b then
-			while b == ".." do
-				local p, c = a:match("^(.-)([^" .. dir_sep_pq .. "]*)" .. dir_sep_pq .. "?$")
-				if c == ".." then
-					break
-				elseif p == "" and c:match(dir_sep == "\\" and "^[A-Za-z]:$" or "^$") then
-					error("bad path traversal")
-				elseif p == "" then
-					p = c == "." and ".." or "."
-				end
-				return M.path(p, ...)
+function M.path(a, b, ...)
+	if a and b then
+		local noUT = M.NO_PARENT_PATH_PATTERN
+		noUT = noUT == nil and (dir_sep == "\\" and "^[A-Za-z]:$" or "^$") or noUT
+		while b == ".." do
+			local p, c = a:match("^(.-)([^" .. dir_sep_pq .. "]*)" .. dir_sep_pq .. "?$")
+			if c == ".." then
+				break
+			elseif p == "" and noUT and c:match(noUT) then
+				error("bad path traversal")
+			elseif p == "" then
+				p = c == "." and ".." or "."
 			end
-			return M.path(a .. (a:sub(-1) ~= dir_sep and dir_sep or "") .. b, ...)
+			return M.path(p, ...)
 		end
-		return a
+		return M.path(a .. (a:sub(-1) ~= dir_sep and dir_sep or "") .. b, ...)
 	end
+	return a
 end
-M.url = function(a, b, ...)
+function M.url(a, b, ...)
 	if a and b then
 		return M.url(a .. ((a:sub(-1) == "/" or b:sub(1,1) == "/") and "" or "/") .. b, ...)
 	end
 	return a
 end
-
-M.tmpname = function()
+function M.tmpname()
 	local tn = os.tmpname()
-	return (M.commands and M.commands.TMP or "") .. tn
+	return (M.TMP_PATH_PREFIX or "") .. tn
 end
 
-M.decompress = zlib and zlib.decompress or function(compressed)
-	assert(type(compressed) == "string", 'Syntax: casc.platform.decompress("compressed")')
-	assert(M.commands and M.commands.gzip and M.commands.toDevNull, 'unsupported platform')
-	
-	local f, f2 = M.tmpname(), M.tmpname()
-	local h = io.open(f, "wb")
-	h:write('\31\139\8\0\0\0\0\0')
-	h:write(compressed)
-	h:close()
-	
-	execute(M.commands.gzip:format(shellEscape(f)) .. " 1>" .. f2 .. " " .. M.commands.toDevNull)
-	os.remove(f)
-	
-	return readAndDeleteFile(f2)
+if zlib and zlib.decompress then
+	M.decompress, M._IMPL.decompress = zlib.decompress, "lzlib"
 end
-M._IMPL.decompress = zlib and zlib.decompress and "lzlib" or M.commands and M.commands.gzip and "external executable"
-
-M.mkdir = lfs and lfs.mkdir or function(path)
-	assert(type(path) == 'string', 'Syntax: casc.platform.mkdir("path")')
-	assert(M.commands and M.commands.mkdir, 'unsupported platform')
-	
-	return execute(M.commands.mkdir:format(shellEscape(path)))
+if lfs and lfs.mkdir then
+	M.mkdir, M._IMPL.mkdir = lfs.mkdir, "LuaFileSystem"
 end
-M._IMPL.mkdir = lfs and lfs.mkdir and "LuaFileSystem" or M.commands and M.commands.mkdir and "external executable"
-
-M.files = lfs and lfs.dir and function(dir, glob)
-	assert(type(dir) == "string" and type(glob) == 'string', 'Syntax: casc.platform.files("dir", "glob")')
-	local pat = "^" .. glob:gsub("%.%-%+", "%%%0"):gsub("%*", ".*") .. "$"
-	local t, ni = {}, 1
-	local ok, it, is, ik = pcall(lfs.dir, dir)
-	if ok then
-		for f in it, is, ik do
-			if f ~= "." and f ~= ".." and f:match(pat) then
-				t[ni], ni = M.path(dir, f), ni + 1
+if lfs and lfs.dir then
+	function M.files(dir, glob)
+		if not (type(dir) == "string" and type(glob) == 'string') then
+			return error('Syntax: casc.platform.files("dir", "glob")', 2)
+		end
+		local pat = "^" .. glob:gsub("%.%-%+", "%%%0"):gsub("%*", ".*") .. "$"
+		local t, ni = {}, 1
+		local ok, it, is, ik = pcall(lfs.dir, dir)
+		if ok then
+			for f in it, is, ik do
+				if f ~= "." and f ~= ".." and f:match(pat) then
+					t[ni], ni = M.path(dir, f), ni + 1
+				end
 			end
 		end
+		return pairs(t)
 	end
-	return pairs(t)
-end or function(dir, glob)
-	assert(type(dir) == "string" and type(glob) == 'string', 'Syntax: casc.platform.files("dir", "glob")')
-	assert(M.commands and M.commands.ls, 'unsupported platform')
-	
-	local t, ni, h = {}, 1, io.popen(M.commands.ls:format(shellEscape(M.path(dir, "")) .. glob), "r")
-	for l in h:lines() do
-		t[ni], ni = l, ni + 1
-	end
-	h:close()
-	return pairs(t)
+	M._IMPL.files = "LuaFileSystem"
 end
-M._IMPL.files = lfs and lfs.dir and "LuaFileSystem" or M.commands and M.commands.ls and "external executable"
 
 local function checkBitModule(bit, name)
 	if bit and bit.bnot and bit.bxor and bit.band and bit.bor then
@@ -131,9 +82,8 @@ local function checkBitModule(bit, name)
 		return true
 	end
 end
-if checkBitModule(bit, "bit module") or checkBitModule(bit32, "bit32 global") then
-else
-	M._IMPL.bit = "CASC shim"
+if not (checkBitModule(bit, "bit module") or checkBitModule(bit32, "bit32 global")) then
+	M._IMPL.bit = "LuaCASC"
 	local MAX_INT32, bxorT, bxorW = 2^32 - 1, {[0]={[0]=0, 1}, {[0]=1, 0}}, 2
 	function M.bnot(a)
 		return MAX_INT32 - a
@@ -172,13 +122,13 @@ M.rol = M.rol or function(n, b)
 	return lo * 2^b + (n - lo)/e2
 end
 
-if socket then
+if socket and socket.request and socket_ltn12 then
 	socket.USERAGENT, socket.TIMEOUT = "luacasc", 5
-	local ltn12, RETRIES = require("ltn12"), 3
+	local RETRIES = 3
 	M.http = function(url, h)
 		for i=1,RETRIES do
 			local sink = {}
-			local ok, status, head = socket.request({url=url, sink=ltn12.sink.table(sink), headers=h})
+			local ok, status, head = socket.request({url=url, sink=socket_ltn12.sink.table(sink), headers=h})
 			if ok then
 				local cnt = table.concat(sink, "")
 				if type(status) ~= "number" or status < 200 or status >= 300 then
@@ -190,108 +140,88 @@ if socket then
 			end
 		end
 	end
-	M._IMPL.http = "LuaSocket module"
-	
-	local rawSocket = require("socket")
-	if rawSocket then
-		M.socketQuery = function(host, port, query)
-			local client, err, ok = rawSocket.connect(host, port)
-			if not client then
-				return nil, "on connect: " .. string(err)
-			end
-			client:settimeout(0, "t")
-			ok, err = client:send(query)
-			if not ok then
-				return nil, "on send: " .. tostring(err)
-			end
-			client:settimeout(nil, "t")
-			ok, err = client:receive("*a", "")
-			client:close()
-			return ok, err
+	M._IMPL.http = "LuaSocket"
+end
+if socket_root and socket_root.connect then
+	M.socketQuery = function(host, port, query)
+		local client, err, ok = socket_root.connect(host, port)
+		if not client then
+			return nil, "on connect: " .. string(err)
 		end
-		M._IMPL.socketQuery = "LuaSocket module"
+		client:settimeout(0, "t")
+		ok, err = client:send(query)
+		if not ok then
+			return nil, "on send: " .. tostring(err)
+		end
+		client:settimeout(nil, "t")
+		ok, err = client:receive("*a", "")
+		client:close()
+		return ok, err
 	end
-elseif curl then
+	M._IMPL.socketQuery = "LuaSocket"
+end
+
+if curl and not (M.http and M.socketQuery) then
 	local function writeSink(sink, buf)
 		sink[#sink+1] = buf
 		return #buf
 	end
-	local function sink(c)
-		local self = {}
-		c:setopt(curl.OPT_WRITEFUNCTION, writeSink)
-		c:setopt(curl.OPT_WRITEDATA, self)
-		return self
-	end
-	M.http = function(url, h)
-		local c = curl.new()
-		c:setopt(curl.OPT_URL, url)
-		c:setopt(curl.OPT_USERAGENT, "luacasc")
-		if h and h.Range then
-			c:setopt(curl.OPT_RANGE, h.Range:match("[%d%-]+"))
+	local function readSource(source, nb)
+		local s, rest = source[1] or ""
+		if s and #s > nb then
+			s, rest = s:sub(1,nb-1), s:sub(nb)
 		end
-		local s = sink(c)
-		c:perform()
-		local status = c:getinfo(curl.INFO_RESPONSE_CODE)
-		if (status or 0) < 200 or status >= 300 then
-			local err = "http request failed: " .. url .. "; http " .. tostring(status) .. "/" .. tostring(c:getinfo(curl.INFO_OS_ERRNO))
-			c:close()
-			return nil, err, status
-		else
-			c:close()
-			return table.concat(s, "")
-		end
+		source[1] = rest
+		return s
 	end
-	M.socketQuery = function(host, port, query)
-		local c, o = curl.new(), {}
-		c:setopt(curl.OPT_WRITEDATA, o)
-		c:setopt(curl.OPT_READDATA, {query})
-		c:setopt(curl.OPT_WRITEFUNCTION, function(sink, buf)
-			sink[#sink+1] = buf
-		end)
-		c:setopt(curl.OPT_READFUNCTION, function(b, nb)
-			local s, rest = b[1] or ""
-			if s and #s > nb then
-				s, rest = s:sub(1,nb-1), s:sub(nb)
+	if not M.http then
+		function M.http(url, h)
+			local c, o = curl.new(), {}
+			c:setopt(curl.OPT_URL, url)
+			c:setopt(curl.OPT_USERAGENT, "luacasc")
+			c:setopt(curl.OPT_WRITEDATA, o)
+			c:setopt(curl.OPT_WRITEFUNCTION, writeSink)
+			if h and h.Range then
+				c:setopt(curl.OPT_RANGE, h.Range:match("[%d%-]+"))
 			end
-			b[1] = rest
-			return s
-		end)
-		c:setopt(curl.OPT_URL, "telnet://" .. host .. ":" .. port)
-		c:perform()
-		if not o[1] then
-			return nil, "no data in response"
-		end
-		return table.concat(o, "")
-	end
-	M._IMPL.http = "LuaCURL module"
-	M._IMPL.socketQuery = "LuaCURL module"
-else
-	M.http = function(url, h)
-		local c, of = "curl -s -S -A 'luacasc+curl'", M.tmpname()
-		if type(h) == "table" then
-			for k,v in pairs(h) do
-				c = c .. ' -H ' .. shellEscape(k .. ": " .. v)
+			c:perform()
+			local status, eno = c:getinfo(curl.INFO_RESPONSE_CODE), c:getinfo(curl.INFO_OS_ERRNO)
+			c:close()
+			if (status or 0) < 200 or status >= 300 then
+				local err = "http request failed: " .. url .. "; http " .. tostring(status) .. "/" .. tostring(eno)
+				return nil, err, status
+			else
+				return table.concat(o, "")
 			end
 		end
-		c = c .. ' -o ' .. shellEscape(of) .. ' ' .. shellEscape(url)
-		local ret = execute(c)
-		if ret == 0 then
-			return readAndDeleteFile(of)
-		end
-		os.remove(of)
-		return nil, "HTTP request failed; status " .. tostring(ret)
+		M._IMPL.http = "LuaCURL"
 	end
-	M._IMPL.http = "external executable"
+	if not M.socketQuery then
+		function M.socketQuery(host, port, query)
+			local c, o = curl.new(), {}
+			c:setopt(curl.OPT_URL, "telnet://" .. host .. ":" .. port)
+			c:setopt(curl.OPT_WRITEDATA, o)
+			c:setopt(curl.OPT_READDATA, {query})
+			c:setopt(curl.OPT_WRITEFUNCTION, writeSink)
+			c:setopt(curl.OPT_READFUNCTION, readSource)
+			c:perform()
+			c:close()
+			if not o[1] then
+				return nil, "no data in response"
+			end
+			return table.concat(o, "")
+		end
+		M._IMPL.socketQuery = "LuaCURL"
+	end
 end
 
-M.md5, M._IMPL.md5 = md5 and md5.sumhexa, "MD5"
-if not M.md5 then
+if md5 and md5.sumhexa then
+	M.md5, M._IMPL.md5 = md5.sumhexa, "MD5"
+else
 	package.loaded["casc.platform"] = M
 	local lmd5 = maybe("casc.md5")
-	M.md5 = lmd5 and lmd5.sumhexa or function()
-		error("No MD5 implementation available")
-	end
-	M._IMPL.md5 = lmd5 and lmd5.sumhexa and "CASC.MD5"
+	M.md5 = lmd5 and lmd5.sumhexa or nil
+	M._IMPL.md5 = lmd5 and lmd5.sumhexa and "LuaCASC" or nil
 end
 
 return M

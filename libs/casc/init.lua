@@ -1,7 +1,7 @@
 -- SPDX-FileCopyrightText: © 2023 foxlit <https://www.townlong-yak.com/casc/>
 -- SPDX-License-Identifier: Artistic-2.0
 
-local M = {_NAME="LuaCASC", _VERSION="LuaCASC 1.15"}
+local M = {_NAME="LuaCASC", _VERSION="LuaCASC 1.16"}
 local plat, bin = require("casc.platform"), require("casc.bin")
 local blte, bspatch = require("casc.blte"), require("casc.bspatch")
 local encoding, root = require("casc.encoding"), require("casc.root")
