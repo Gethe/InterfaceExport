@@ -82,7 +82,7 @@ local function parseLegacy(data)
 			local t, tsz = idVariantMap[tfid] or {}
 			if (nameMap[nhash] or tfid) ~= tfid then
 				local hexHash = ('%02x'):rep(#nhash):format(nhash:byte(1, #nhash))
-				return false, 'Root manifest invalid: file name name maps to multiple file IDs', hexHash
+				return false, 'Root manifest invalid: file name maps to multiple file IDs', hexHash
 			end
 			nameMap[nhash], idVariantMap[tfid], tsz = tfid, t, #t
 			t[tsz+1], t[tsz+2], lfid = chash, info, tfid + 1
@@ -125,7 +125,7 @@ local function parseMFST(data)
 				local nhash = ssub(data, p3+1, p3+8)
 				if (nameMap[nhash] or tfid) ~= tfid then
 					local hexHash = ('%02x'):rep(#nhash):format(nhash:byte(1, #nhash))
-					return false, 'Root manifest invalid: file name name maps to multiple file IDs', hexHash
+					return false, 'Root manifest invalid: file name maps to multiple file IDs', hexHash
 				end
 				nameMap[nhash], p3 = tfid, p3 + 8
 			end
