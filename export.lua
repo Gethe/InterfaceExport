@@ -85,6 +85,9 @@ local FILEID_PATH_MAP = {
     ["DBFilesClient/GlobalStrings.db2"] = 1394440,
     ["DBFilesClient/UiTextureAtlas.db2"] = 897470,
     ["DBFilesClient/UiTextureAtlasMember.db2"] = 897532,
+    -- These _may_ have proper names, but they're not known at present.
+    ["Interface/ui-code-list.txt"] = 6067012,
+    ["Interface/ui-code-doc-list.txt"] = 6076661,
 }
 
 local rmdir, convert do
@@ -201,6 +204,29 @@ local GetFileList do
         end
     end
 
+    local function HasTextualManifest(fileType)
+        local data
+
+        -- At present art exports still use the old manifest.
+        if fileType == "code" then
+            data = fileHandle:readFile("Interface/ui-toc-list.txt")
+        end
+
+        return data ~= nil
+    end
+
+    local function CheckFileList(fileType, files, listData)
+        if listData == nil then
+            return
+        end
+
+        for filePath in listData:gmatch("[^\r\n]+") do
+            local fileDir, fileName = filePath:match("^(.+[\\/])(.-)$")
+            local fileID = fileHandle.root:getFileID(filePath)
+            CheckFile(fileType, files, fileID, fileDir, fileName)
+        end
+    end
+
     function GetFileList(fileType)
         local files = {}
         if csv and io.open("manifestinterfacedata.csv", "r")then
@@ -209,6 +235,11 @@ local GetFileList do
             for fields in csvFile:lines() do
                 CheckFile(fileType, files, fields.ID, fields.FilePath, fields.FileName)
             end
+        elseif HasTextualManifest(fileType) then
+            fileHandle.root:addFileIDPaths(FILEID_PATH_MAP)
+            CheckFileList(fileType, files, fileHandle:readFile("Interface/ui-toc-list.txt"))
+            CheckFileList(fileType, files, fileHandle:readFile("Interface/ui-code-list.txt"))
+            CheckFileList(fileType, files, fileHandle:readFile("Interface/ui-code-doc-list.txt"))
         else
             fileHandle.root:addFileIDPaths(FILEID_PATH_MAP)
 
